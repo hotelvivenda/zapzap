@@ -30,7 +30,7 @@ if (!db.prepare('PRAGMA table_info(contacts)').all().some((c) => c.name === 'val
   db.exec('ALTER TABLE contacts ADD COLUMN value_cents INTEGER NOT NULL DEFAULT 0');
 }
 
-export const STAGES = ['novo', 'em_conversa', 'proposta', 'fechado', 'perdido'];
+export const STAGES = ['novo', 'em_conversa', 'proposta', 'aguardando_pagamento', 'fechado', 'perdido'];
 
 export function upsertContact(phone, name) {
   db.prepare(

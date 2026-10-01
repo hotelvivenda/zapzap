@@ -4,6 +4,7 @@ const LABELS = {
   novo: 'Novo',
   em_conversa: 'Em conversa',
   proposta: 'Proposta enviada',
+  aguardando_pagamento: 'Aguardando pagamento',
   fechado: 'Fechado',
   perdido: 'Perdido',
 };
