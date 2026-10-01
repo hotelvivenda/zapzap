@@ -28,6 +28,7 @@ export default function App() {
   const [text, setText] = useState('');
   const [error, setError] = useState('');
   const [dialog, setDialog] = useState(null);
+  const [view, setView] = useState('conversas');
   const endRef = useRef(null);
 
   const selected = contacts.find((c) => c.id === selectedId);
@@ -71,6 +72,19 @@ export default function App() {
       loadContacts();
     });
 
+  const moveStage = (id, stage) => {
+    setContacts((cs) => cs.map((c) => (c.id === id ? { ...c, stage } : c)));
+    run(async () => {
+      await api(`/contacts/${id}`, { method: 'PATCH', body: { stage } });
+      loadContacts();
+    });
+  };
+
+  const openChat = (id) => {
+    setSelectedId(id);
+    setView('conversas');
+  };
+
   const addContact = (form) =>
     run(async () => {
       const c = await api('/contacts', { method: 'POST', body: { phone: form.phone, name: form.name } });
@@ -91,14 +105,21 @@ export default function App() {
     });
 
   return (
+    <div className="shell">
+      <nav className="tabs">
+        <strong>ZapZap CRM</strong>
+        <button className={view === 'conversas' ? 'tab on' : 'tab'} onClick={() => setView('conversas')}>Conversas</button>
+        <button className={view === 'funil' ? 'tab on' : 'tab'} onClick={() => setView('funil')}>Funil</button>
+        <span className={`badge ${config.provider}`}>
+          {config.provider === 'cloud' ? 'WhatsApp conectado' : 'Modo teste'}
+        </span>
+      </nav>
+      {error && view === 'funil' && <div className="error">{error}</div>}
+      {view === 'funil' ? (
+        <Board contacts={contacts} stages={config.stages} onMove={moveStage} onOpen={openChat} />
+      ) : (
     <div className="app">
       <aside className="list">
-        <header>
-          <h1>ZapZap CRM</h1>
-          <span className={`badge ${config.provider}`}>
-            {config.provider === 'cloud' ? 'WhatsApp conectado' : 'Modo teste'}
-          </span>
-        </header>
         <div className="search">
           <input placeholder="Buscar nome ou telefone" value={q} onChange={(e) => setQ(e.target.value)} />
           <button onClick={() => setDialog('new')}>+ Novo</button>
@@ -166,6 +187,61 @@ export default function App() {
           <textarea key={selected.id + 't'} defaultValue={selected.notes} onBlur={(e) => update({ notes: e.target.value })} />
         </aside>
       )}
+    </div>
+      )}
+      {dialog && view === 'funil' && (
+        <Dialog kind={dialog} error={error} onCancel={() => setDialog(null)} onSubmit={addContact} />
+      )}
+    </div>
+  );
+}
+
+function Board({ contacts, stages, onMove, onOpen }) {
+  const [over, setOver] = useState(null);
+  const drop = (e, stage) => {
+    e.preventDefault();
+    setOver(null);
+    const id = Number(e.dataTransfer.getData('text/plain'));
+    const c = contacts.find((x) => x.id === id);
+    if (c && c.stage !== stage) onMove(id, stage);
+  };
+  return (
+    <div className="board">
+      {stages.map((stage) => {
+        const items = contacts.filter((c) => c.stage === stage);
+        return (
+          <section
+            key={stage}
+            className={`col ${over === stage ? 'over' : ''}`}
+            onDragOver={(e) => { e.preventDefault(); setOver(stage); }}
+            onDragLeave={() => setOver((o) => (o === stage ? null : o))}
+            onDrop={(e) => drop(e, stage)}
+          >
+            <h3>{LABELS[stage]} <span>{items.length}</span></h3>
+            {items.map((c) => (
+              <article
+                key={c.id}
+                className="card"
+                draggable
+                onDragStart={(e) => e.dataTransfer.setData('text/plain', String(c.id))}
+                onClick={() => onOpen(c.id)}
+              >
+                <strong>{c.name || c.phone}</strong>
+                <small>{c.last_body || 'Sem mensagens'}</small>
+                <select
+                  aria-label="Mover para etapa"
+                  value={c.stage}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => onMove(c.id, e.target.value)}
+                >
+                  {stages.map((s) => <option key={s} value={s}>{LABELS[s]}</option>)}
+                </select>
+              </article>
+            ))}
+            {!items.length && <p className="empty">Arraste um cliente para cá</p>}
+          </section>
+        );
+      })}
     </div>
   );
 }
