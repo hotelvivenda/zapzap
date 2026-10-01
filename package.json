@@ -1,0 +1,16 @@
+{
+  "name": "zapzap-crm",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "install:all": "npm install && npm install --prefix web",
+    "dev:server": "node --watch server/src/index.js",
+    "dev:web": "npm run dev --prefix web",
+    "build": "npm run build --prefix web",
+    "start": "node server/src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  },
+  "engines": { "node": ">=22.13" }
+}
