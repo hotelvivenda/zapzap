@@ -1,6 +1,6 @@
 import express from 'express';
 import { existsSync } from 'node:fs';
-import { db, STAGES, upsertContact, addMessage } from './db.js';
+import { db, listStages, stageExists, upsertContact, addMessage } from './db.js';
 import { mock } from './whatsapp/mock.js';
 import { cloud, parseWebhook } from './whatsapp/cloud.js';
 
@@ -10,7 +10,44 @@ app.use(express.json());
 
 const normalize = (p) => String(p || '').replace(/\D/g, '');
 
-app.get('/api/config', (_req, res) => res.json({ provider: provider.name, stages: STAGES }));
+app.get('/api/config', (_req, res) => res.json({ provider: provider.name, stages: listStages() }));
+
+// ---- Etapas do funil ----
+const cleanName = (n) => String(n || '').trim().slice(0, 40);
+
+app.post('/api/stages', (req, res) => {
+  const name = cleanName(req.body.name);
+  if (!name) return res.status(400).json({ error: 'Dê um nome para a etapa' });
+  const pos = db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM stages').get().p;
+  db.prepare('INSERT INTO stages (key, name, position) VALUES (?,?,?)').run('e' + Date.now().toString(36), name, pos);
+  res.status(201).json(listStages());
+});
+
+app.put('/api/stages/order', (req, res) => {
+  const keys = req.body.keys;
+  const current = listStages().map((s) => s.key);
+  if (!Array.isArray(keys) || keys.length !== current.length || !current.every((k) => keys.includes(k)))
+    return res.status(400).json({ error: 'Ordem inválida' });
+  const up = db.prepare('UPDATE stages SET position = ? WHERE key = ?');
+  keys.forEach((k, idx) => up.run(idx, k));
+  res.json(listStages());
+});
+
+app.patch('/api/stages/:key', (req, res) => {
+  const name = cleanName(req.body.name);
+  if (!name) return res.status(400).json({ error: 'Dê um nome para a etapa' });
+  const r = db.prepare('UPDATE stages SET name = ? WHERE key = ?').run(name, req.params.key);
+  r.changes ? res.json(listStages()) : res.status(404).json({ error: 'Etapa não encontrada' });
+});
+
+app.delete('/api/stages/:key', (req, res) => {
+  if (!stageExists(req.params.key)) return res.status(404).json({ error: 'Etapa não encontrada' });
+  if (listStages().length <= 1) return res.status(400).json({ error: 'O funil precisa ter pelo menos uma etapa' });
+  const n = db.prepare('SELECT COUNT(*) AS n FROM contacts WHERE stage = ?').get(req.params.key).n;
+  if (n > 0) return res.status(409).json({ error: `Há ${n} cliente(s) nesta etapa. Mova-os para outra etapa antes de excluir.` });
+  db.prepare('DELETE FROM stages WHERE key = ?').run(req.params.key);
+  res.json(listStages());
+});
 
 app.get('/api/contacts', (req, res) => {
   const q = `%${req.query.q || ''}%`;
@@ -28,12 +65,15 @@ app.get('/api/contacts', (req, res) => {
 app.post('/api/contacts', (req, res) => {
   const phone = normalize(req.body.phone);
   if (phone.length < 10) return res.status(400).json({ error: 'Telefone inválido (use DDI+DDD+número)' });
-  res.status(201).json(upsertContact(phone, req.body.name));
+  const { stage, value_cents: value = 0 } = req.body;
+  if (stage && !stageExists(stage)) return res.status(400).json({ error: 'Etapa inválida' });
+  if (!(Number.isInteger(value) && value >= 0)) return res.status(400).json({ error: 'Valor inválido' });
+  res.status(201).json(upsertContact(phone, req.body.name, stage, value));
 });
 
 app.patch('/api/contacts/:id', (req, res) => {
   const { name, stage, notes, value_cents } = req.body;
-  if (stage !== undefined && !STAGES.includes(stage)) return res.status(400).json({ error: 'Etapa inválida' });
+  if (stage !== undefined && !stageExists(stage)) return res.status(400).json({ error: 'Etapa inválida' });
   if (value_cents !== undefined && !(Number.isInteger(value_cents) && value_cents >= 0))
     return res.status(400).json({ error: 'Valor inválido' });
   db.prepare(

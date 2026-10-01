@@ -30,13 +30,34 @@ if (!db.prepare('PRAGMA table_info(contacts)').all().some((c) => c.name === 'val
   db.exec('ALTER TABLE contacts ADD COLUMN value_cents INTEGER NOT NULL DEFAULT 0');
 }
 
-export const STAGES = ['novo', 'em_conversa', 'proposta', 'aguardando_pagamento', 'fechado', 'perdido'];
+// Etapas do funil ficam no banco para poderem ser editadas pela tela.
+db.exec(`CREATE TABLE IF NOT EXISTS stages (
+  key TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  position INTEGER NOT NULL
+)`);
+if (db.prepare('SELECT COUNT(*) AS n FROM stages').get().n === 0) {
+  const seed = db.prepare('INSERT INTO stages (key, name, position) VALUES (?,?,?)');
+  [
+    ['novo', 'Novo'],
+    ['em_conversa', 'Em conversa'],
+    ['proposta', 'Proposta enviada'],
+    ['aguardando_pagamento', 'Aguardando pagamento'],
+    ['fechado', 'Fechado'],
+    ['perdido', 'Perdido'],
+  ].forEach(([key, name], i) => seed.run(key, name, i));
+}
 
-export function upsertContact(phone, name) {
+export const listStages = () => db.prepare('SELECT key, name FROM stages ORDER BY position').all();
+export const stageExists = (key) => !!db.prepare('SELECT 1 FROM stages WHERE key = ?').get(key);
+const firstStageKey = () => db.prepare('SELECT key FROM stages ORDER BY position LIMIT 1').get().key;
+
+// Cliente novo entra na etapa informada ou, se não houver, na primeira coluna do funil.
+export function upsertContact(phone, name, stage = null, valueCents = 0) {
   db.prepare(
-    `INSERT INTO contacts (phone, name) VALUES (?, ?)
+    `INSERT INTO contacts (phone, name, stage, value_cents) VALUES (?, ?, ?, ?)
      ON CONFLICT(phone) DO UPDATE SET name = COALESCE(contacts.name, excluded.name)`
-  ).run(phone, name || null);
+  ).run(phone, name || null, stage || firstStageKey(), valueCents);
   return db.prepare('SELECT * FROM contacts WHERE phone = ?').get(phone);
 }
 
