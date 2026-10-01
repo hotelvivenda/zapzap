@@ -27,6 +27,7 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [error, setError] = useState('');
+  const [dialog, setDialog] = useState(null);
   const endRef = useRef(null);
 
   const selected = contacts.find((c) => c.id === selectedId);
@@ -70,23 +71,23 @@ export default function App() {
       loadContacts();
     });
 
-  const addContact = () => {
-    const phone = prompt('Telefone com DDI e DDD (ex: 5511999998888):');
-    if (!phone) return;
-    const name = prompt('Nome do contato:') || '';
+  const addContact = (form) =>
     run(async () => {
-      const c = await api('/contacts', { method: 'POST', body: { phone, name } });
+      const c = await api('/contacts', { method: 'POST', body: { phone: form.phone, name: form.name } });
+      setDialog(null);
       await loadContacts();
       setSelectedId(c.id);
     });
-  };
 
-  const simulate = () =>
+  const simulate = (form) =>
     run(async () => {
-      const msg = prompt('Mensagem que o cliente "enviou":');
-      if (!msg) return;
-      await api('/dev/incoming', { method: 'POST', body: { phone: selected.phone, name: selected.name, text: msg } });
+      await api('/dev/incoming', {
+        method: 'POST',
+        body: { phone: selected.phone, name: selected.name, text: form.text },
+      });
+      setDialog(null);
       loadMessages(selectedId);
+      loadContacts();
     });
 
   return (
@@ -100,7 +101,7 @@ export default function App() {
         </header>
         <div className="search">
           <input placeholder="Buscar nome ou telefone" value={q} onChange={(e) => setQ(e.target.value)} />
-          <button onClick={addContact}>+ Novo</button>
+          <button onClick={() => setDialog('new')}>+ Novo</button>
         </div>
         <ul>
           {contacts.map((c) => (
@@ -127,7 +128,7 @@ export default function App() {
               <select value={selected.stage} onChange={(e) => update({ stage: e.target.value })}>
                 {config.stages.map((s) => <option key={s} value={s}>{LABELS[s]}</option>)}
               </select>
-              {config.provider === 'mock' && <button onClick={simulate}>Simular resposta</button>}
+              {config.provider === 'mock' && <button onClick={() => setDialog('sim')}>Simular resposta</button>}
             </header>
             <div className="messages">
               {messages.map((m) => (
@@ -147,6 +148,15 @@ export default function App() {
         )}
       </main>
 
+      {dialog && (
+        <Dialog
+          kind={dialog}
+          error={error}
+          onCancel={() => { setDialog(null); setError(''); }}
+          onSubmit={dialog === 'new' ? addContact : simulate}
+        />
+      )}
+
       {selected && (
         <aside className="details">
           <h2>Detalhes</h2>
@@ -156,6 +166,41 @@ export default function App() {
           <textarea key={selected.id + 't'} defaultValue={selected.notes} onBlur={(e) => update({ notes: e.target.value })} />
         </aside>
       )}
+    </div>
+  );
+}
+
+function Dialog({ kind, error, onCancel, onSubmit }) {
+  const [form, setForm] = useState({ phone: '', name: '', text: '' });
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const isNew = kind === 'new';
+  return (
+    <div className="overlay" onClick={onCancel}>
+      <form
+        className="dialog"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => { e.preventDefault(); onSubmit(form); }}
+      >
+        <h2>{isNew ? 'Novo contato' : 'Simular mensagem do cliente'}</h2>
+        {isNew ? (
+          <>
+            <label htmlFor="d-name">Nome</label>
+            <input id="d-name" value={form.name} onChange={set('name')} placeholder="Maria Souza" autoFocus />
+            <label htmlFor="d-phone">Telefone com DDI e DDD</label>
+            <input id="d-phone" value={form.phone} onChange={set('phone')} placeholder="5511999998888" />
+          </>
+        ) : (
+          <>
+            <label htmlFor="d-text">O que o cliente escreveu</label>
+            <input id="d-text" value={form.text} onChange={set('text')} placeholder="Tem vaga para sábado?" autoFocus />
+          </>
+        )}
+        {error && <div className="error">{error}</div>}
+        <div className="actions">
+          <button type="button" className="ghost" onClick={onCancel}>Cancelar</button>
+          <button>{isNew ? 'Salvar' : 'Receber mensagem'}</button>
+        </div>
+      </form>
     </div>
   );
 }
