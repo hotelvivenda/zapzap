@@ -32,11 +32,14 @@ app.post('/api/contacts', (req, res) => {
 });
 
 app.patch('/api/contacts/:id', (req, res) => {
-  const { name, stage, notes } = req.body;
+  const { name, stage, notes, value_cents } = req.body;
   if (stage !== undefined && !STAGES.includes(stage)) return res.status(400).json({ error: 'Etapa inválida' });
+  if (value_cents !== undefined && !(Number.isInteger(value_cents) && value_cents >= 0))
+    return res.status(400).json({ error: 'Valor inválido' });
   db.prepare(
-    `UPDATE contacts SET name = COALESCE(?, name), stage = COALESCE(?, stage), notes = COALESCE(?, notes) WHERE id = ?`
-  ).run(name ?? null, stage ?? null, notes ?? null, req.params.id);
+    `UPDATE contacts SET name = COALESCE(?, name), stage = COALESCE(?, stage), notes = COALESCE(?, notes),
+       value_cents = COALESCE(?, value_cents) WHERE id = ?`
+  ).run(name ?? null, stage ?? null, notes ?? null, value_cents ?? null, req.params.id);
   const c = db.prepare('SELECT * FROM contacts WHERE id = ?').get(req.params.id);
   c ? res.json(c) : res.status(404).json({ error: 'Contato não encontrado' });
 });

@@ -25,6 +25,11 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_contact ON messages(contact_id, id);
 `);
 
+// Bancos criados antes do campo de valor ganham a coluna automaticamente.
+if (!db.prepare('PRAGMA table_info(contacts)').all().some((c) => c.name === 'value_cents')) {
+  db.exec('ALTER TABLE contacts ADD COLUMN value_cents INTEGER NOT NULL DEFAULT 0');
+}
+
 export const STAGES = ['novo', 'em_conversa', 'proposta', 'fechado', 'perdido'];
 
 export function upsertContact(phone, name) {

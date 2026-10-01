@@ -8,6 +8,17 @@ const LABELS = {
   perdido: 'Perdido',
 };
 
+const brl = (cents) =>
+  (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+// Aceita "1260", "1.260,50", "R$ 1260,5" e devolve centavos (ou null se inválido).
+function parseBRL(text) {
+  const t = text.replace(/[R$\s.]/g, '').replace(',', '.');
+  if (t === '') return 0;
+  const n = Number(t);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : null;
+}
+
 async function api(path, opts) {
   const res = await fetch(`/api${path}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -128,7 +139,10 @@ export default function App() {
           {contacts.map((c) => (
             <li key={c.id} className={c.id === selectedId ? 'active' : ''} onClick={() => setSelectedId(c.id)}>
               <strong>{c.name || c.phone}</strong>
-              <span className={`stage ${c.stage}`}>{LABELS[c.stage]}</span>
+              <span className={`stage ${c.stage}`}>
+                {LABELS[c.stage]}
+                {c.value_cents > 0 && ` · ${brl(c.value_cents)}`}
+              </span>
               <small>{c.last_body || 'Sem mensagens'}</small>
             </li>
           ))}
@@ -183,6 +197,19 @@ export default function App() {
           <h2>Detalhes</h2>
           <label>Nome</label>
           <input key={selected.id + 'n'} defaultValue={selected.name || ''} onBlur={(e) => update({ name: e.target.value })} />
+          <label htmlFor="valor">Valor da negociação (R$)</label>
+          <input
+            id="valor"
+            key={selected.id + 'v'}
+            inputMode="decimal"
+            placeholder="0,00"
+            defaultValue={selected.value_cents ? (selected.value_cents / 100).toFixed(2).replace('.', ',') : ''}
+            onBlur={(e) => {
+              const cents = parseBRL(e.target.value);
+              if (cents === null) return setError('Valor inválido. Exemplo: 1260,00');
+              update({ value_cents: cents });
+            }}
+          />
           <label>Anotações</label>
           <textarea key={selected.id + 't'} defaultValue={selected.notes} onBlur={(e) => update({ notes: e.target.value })} />
         </aside>
@@ -217,7 +244,10 @@ function Board({ contacts, stages, onMove, onOpen }) {
             onDragLeave={() => setOver((o) => (o === stage ? null : o))}
             onDrop={(e) => drop(e, stage)}
           >
-            <h3>{LABELS[stage]} <span>{items.length}</span></h3>
+            <h3>
+              {LABELS[stage]} <span>{items.length}</span>
+            </h3>
+            <p className="total">{brl(items.reduce((s, c) => s + c.value_cents, 0))}</p>
             {items.map((c) => (
               <article
                 key={c.id}
@@ -227,6 +257,7 @@ function Board({ contacts, stages, onMove, onOpen }) {
                 onClick={() => onOpen(c.id)}
               >
                 <strong>{c.name || c.phone}</strong>
+                {c.value_cents > 0 && <span className="value">{brl(c.value_cents)}</span>}
                 <small>{c.last_body || 'Sem mensagens'}</small>
                 <select
                   aria-label="Mover para etapa"
