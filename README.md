@@ -35,3 +35,8 @@ template aprovado; dentro de 24h após a última mensagem dele, texto livre func
 Cada etapa tem o campo "Avisar após (dias)" (em Funil > Editar etapas). Cliente que fica mais tempo
 que isso na etapa ganha um aviso no cartão e entra na lista do topo do funil. Por padrão:
 Proposta enviada = 2 dias, Aguardando pagamento = 1 dia. Mover o cliente zera a contagem.
+
+## Instalar em um servidor (VPS)
+Veja `deploy/GUIA-INSTALACAO.md` (passo a passo para quem não é programador) e `deploy/install.sh`.
+O servidor exige senha (`CRM_PASSWORD_HASH`) e só aceita conexões locais; o HTTPS fica por conta do Caddy.
+Para gerar o hash de uma senha: `printf '%s' 'sua-senha' | npm run --silent set-password`.

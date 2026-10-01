@@ -8,11 +8,11 @@ const WINDOW_MS = 15 * 60 * 1000;
 
 export function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
-  return `scrypt$${salt}$${crypto.scryptSync(password, salt, 64).toString('hex')}`;
+  return `scrypt.${salt}.${crypto.scryptSync(password, salt, 64).toString("hex")}`;
 }
 
 function verifyPassword(password, stored) {
-  const [alg, salt, hash] = String(stored).split('$');
+  const [alg, salt, hash] = String(stored).split(".");
   if (alg !== 'scrypt' || !salt || !hash) return false;
   const a = crypto.scryptSync(password, salt, 64);
   const b = Buffer.from(hash, 'hex');
