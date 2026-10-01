@@ -4,10 +4,11 @@
   "type": "module",
   "scripts": {
     "install:all": "npm install && npm install --prefix web",
-    "dev:server": "node --watch server/src/index.js",
+    "dev:server": "node --watch --env-file-if-exists=.env server/src/index.js",
     "dev:web": "npm run dev --prefix web",
     "build": "npm run build --prefix web",
-    "start": "node server/src/index.js"
+    "start": "node --env-file-if-exists=.env server/src/index.js",
+    "set-password": "node server/src/hash-password.js"
   },
   "dependencies": {
     "express": "^4.21.0"

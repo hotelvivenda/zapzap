@@ -32,6 +32,7 @@ input, select, textarea { border: 1px solid var(--line); border-radius: 6px; pad
 .tabs { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .tabs strong { font-size: 18px; margin-right: 8px; }
 .tabs .badge { margin-left: auto; }
+.tabs .badge + button { margin-left: 0; }
 button.tab { background: transparent; color: var(--muted); }
 button.tab.on { background: var(--hover); color: var(--fg); font-weight: 600; }
 .app { display: grid; grid-template-columns: 320px 1fr 260px; flex: 1; min-height: 0; }
@@ -97,3 +98,7 @@ button.link { background: none; color: inherit; padding: 0; text-decoration: und
 .late-tag { font-size: 12px; font-weight: 600; width: fit-content; padding: 1px 8px; border-radius: 99px; background: var(--late-bg); color: var(--late-fg); }
 .alert-days { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
 .alert-days input { padding: 4px 8px; }
+
+.login { height: 100%; display: grid; place-items: center; padding: 16px; }
+.login form { width: 100%; max-width: 340px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 24px; display: grid; gap: 10px; }
+.login label { font-size: 13px; color: var(--muted); }

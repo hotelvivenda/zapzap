@@ -19,6 +19,8 @@ const lateDays = (c, stages) => {
 };
 const daysLabel = (n) => (n === 0 ? 'hoje' : `há ${n} dia${n === 1 ? '' : 's'}`);
 
+let onUnauthorized = () => {};
+
 async function api(path, opts) {
   const res = await fetch(`/api${path}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -26,11 +28,58 @@ async function api(path, opts) {
     body: opts?.body ? JSON.stringify(opts.body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && path !== '/login') onUnauthorized();
   if (!res.ok) throw new Error(data.error || 'Erro');
   return data;
 }
 
 export default function App() {
+  const [me, setMe] = useState(null);
+  useEffect(() => {
+    onUnauthorized = () => setMe((m) => (m ? { ...m, authenticated: false } : m));
+    api('/me').then(setMe).catch(() => setMe({ auth: true, authenticated: false }));
+  }, []);
+  if (!me) return null;
+  if (!me.authenticated) return <Login onDone={() => setMe({ ...me, authenticated: true })} />;
+  return (
+    <Crm
+      canLogout={me.auth}
+      onLogout={() => api('/logout', { method: 'POST' }).then(() => setMe({ ...me, authenticated: false }))}
+    />
+  );
+}
+
+function Login({ onDone }) {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      await api('/login', { method: 'POST', body: { password } });
+      onDone();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="login">
+      <form onSubmit={submit}>
+        <h1>ZapZap CRM</h1>
+        <label htmlFor="senha">Senha de acesso</label>
+        <input id="senha" type="password" autoComplete="current-password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
+        {error && <div className="error">{error}</div>}
+        <button disabled={busy || !password}>Entrar</button>
+      </form>
+    </div>
+  );
+}
+
+function Crm({ canLogout, onLogout }) {
   const [config, setConfig] = useState({ provider: '', stages: [] });
   const [contacts, setContacts] = useState([]);
   const [q, setQ] = useState('');
@@ -133,6 +182,7 @@ export default function App() {
         <span className={`badge ${config.provider}`}>
           {config.provider === 'cloud' ? 'WhatsApp conectado' : 'Modo teste'}
         </span>
+        {canLogout && <button className="ghost" onClick={onLogout}>Sair</button>}
       </nav>
       {error && view === 'funil' && <div className="error">{error}</div>}
       {view === 'funil' ? (

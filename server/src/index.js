@@ -1,12 +1,23 @@
 import express from 'express';
+import crypto from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { db, listStages, stageExists, upsertContact, addMessage, setStage } from './db.js';
 import { mock } from './whatsapp/mock.js';
 import { cloud, parseWebhook } from './whatsapp/cloud.js';
+import { setupAuth } from './auth.js';
 
 const provider = process.env.WHATSAPP_PROVIDER === 'cloud' ? cloud : mock;
 const app = express();
-app.use(express.json());
+app.set('trust proxy', 1);
+// Guarda o corpo original: a Meta assina o webhook e a assinatura é conferida sobre ele.
+app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } }));
+
+const auth = setupAuth({
+  passwordHash: process.env.CRM_PASSWORD_HASH,
+  passwordPlain: process.env.CRM_PASSWORD,
+});
+auth.mount(app);
+app.use('/api', auth.require);
 
 const normalize = (p) => String(p || '').replace(/\D/g, '');
 
@@ -137,6 +148,13 @@ app.get('/webhook', (req, res) => {
 });
 
 app.post('/webhook', (req, res) => {
+  // Só o provedor oficial recebe mensagens, e só com a assinatura da Meta válida.
+  if (provider.name !== 'cloud') return res.sendStatus(404);
+  const secret = process.env.WHATSAPP_APP_SECRET;
+  if (!secret) return res.sendStatus(503);
+  const got = Buffer.from(req.get('x-hub-signature-256') || '');
+  const want = Buffer.from('sha256=' + crypto.createHmac('sha256', secret).update(req.rawBody || '').digest('hex'));
+  if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return res.sendStatus(401);
   for (const m of parseWebhook(req.body)) {
     const c = upsertContact(m.phone, m.name);
     addMessage(c.id, 'in', m.text, m.id);
@@ -150,4 +168,12 @@ if (existsSync('web/dist')) {
 }
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`CRM em http://localhost:${port} (WhatsApp: ${provider.name})`));
+const host = process.env.HOST || '127.0.0.1';
+if (!auth.enabled && !['127.0.0.1', 'localhost', '::1'].includes(host)) {
+  console.error('Recusado: defina CRM_PASSWORD_HASH (ou CRM_PASSWORD) antes de abrir o sistema para a rede.');
+  process.exit(1);
+}
+if (!auth.enabled) console.warn('Aviso: sem senha configurada. Use apenas no seu computador.');
+app.listen(port, host, () =>
+  console.log(`CRM em http://${host}:${port} (WhatsApp: ${provider.name}, login: ${auth.enabled ? 'ligado' : 'desligado'})`)
+);
