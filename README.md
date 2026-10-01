@@ -25,3 +25,8 @@ Nada é enviado ao WhatsApp. Use o botão "Simular resposta" para fingir mensage
 
 Obs.: pela API oficial, só é possível iniciar conversa com um cliente usando um
 template aprovado; dentro de 24h após a última mensagem dele, texto livre funciona.
+
+## Movimentos automáticos
+- Cliente novo entra na primeira coluna do funil.
+- Na primeira resposta enviada a um cliente da primeira coluna, ele vai para a segunda.
+- Todo o resto é movido à mão.

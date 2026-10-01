@@ -94,8 +94,14 @@ app.post('/api/contacts/:id/messages', async (req, res) => {
   if (!c) return res.status(404).json({ error: 'Contato não encontrado' });
   if (!text) return res.status(400).json({ error: 'Mensagem vazia' });
   try {
+    const firstReply = !db.prepare(`SELECT 1 FROM messages WHERE contact_id = ? AND direction = 'out'`).get(c.id);
     const { id } = await provider.send(c.phone, text);
     addMessage(c.id, 'out', text, id);
+    // Primeira resposta a quem está na primeira coluna: avança para a segunda.
+    const [first, second] = listStages();
+    if (firstReply && second && c.stage === first.key) {
+      db.prepare('UPDATE contacts SET stage = ? WHERE id = ?').run(second.key, c.id);
+    }
     res.status(201).json({ ok: true });
   } catch (e) {
     res.status(502).json({ error: e.message });
