@@ -2,6 +2,7 @@
   --bg: #f3f5f4; --panel: #ffffff; --fg: #1d2623; --muted: #66726d; --line: #e1e7e4;
   --accent: #1f8a5b; --accent-fg: #ffffff; --hover: #eef7f2; --in: #ffffff; --out: #d9f2e3;
   --warn: #f6e3a3; --ok: #c4ecd3; --bad: #f6cccc; --chip: #e4e9e7;
+  --late-bg: #fdecc8; --late-fg: #7a4a00; --late-line: #e0a526;
   --err-bg: #fbe0e0; --err-fg: #8c2222; --badge: #f6e3a3; --badge-ok: #c4ecd3;
 }
 @media (prefers-color-scheme: dark) {
@@ -9,6 +10,7 @@
     --bg: #131917; --panel: #1b2321; --fg: #e5ece9; --muted: #92a09a; --line: #2b3633;
     --accent: #35b47d; --accent-fg: #07130e; --hover: #22302b; --in: #25302d; --out: #1f4a37;
     --warn: #5a4a14; --ok: #1f5a3a; --bad: #5e2626; --chip: #2b3633;
+    --late-bg: #4d3a10; --late-fg: #ffd98a; --late-line: #b8831c;
     --err-bg: #4a1f1f; --err-fg: #ffc9c9; --badge: #5a4a14; --badge-ok: #1f5a3a; color-scheme: dark;
   }
 }
@@ -16,6 +18,7 @@
   --bg: #131917; --panel: #1b2321; --fg: #e5ece9; --muted: #92a09a; --line: #2b3633;
   --accent: #35b47d; --accent-fg: #07130e; --hover: #22302b; --in: #25302d; --out: #1f4a37;
   --warn: #5a4a14; --ok: #1f5a3a; --bad: #5e2626; --chip: #2b3633;
+  --late-bg: #4d3a10; --late-fg: #ffd98a; --late-line: #b8831c;
   --err-bg: #4a1f1f; --err-fg: #ffc9c9; --badge: #5a4a14; --badge-ok: #1f5a3a; color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -87,3 +90,10 @@ button:disabled { opacity: .4; cursor: default; }
 .col-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .col-actions button { padding: 4px 8px; font-size: 12px; }
 .col .add { margin-top: auto; font-size: 13px; }
+button.link { background: none; color: inherit; padding: 0; text-decoration: underline; text-underline-offset: 2px; }
+.alert { margin: 12px 16px 0; padding: 10px 12px; border-radius: 8px; background: var(--late-bg); color: var(--late-fg); border: 1px solid var(--late-line); display: grid; gap: 4px; }
+.alert span { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.card.late { border-color: var(--late-line); }
+.late-tag { font-size: 12px; font-weight: 600; width: fit-content; padding: 1px 8px; border-radius: 99px; background: var(--late-bg); color: var(--late-fg); }
+.alert-days { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.alert-days input { padding: 4px 8px; }

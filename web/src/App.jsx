@@ -12,6 +12,13 @@ function parseBRL(text) {
   return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : null;
 }
 
+// Cliente parado na etapa por mais dias do que o aviso da etapa permite.
+const lateDays = (c, stages) => {
+  const limit = stages.find((s) => s.key === c.stage)?.alert_days;
+  return limit && c.days_in_stage >= limit ? c.days_in_stage : null;
+};
+const daysLabel = (n) => (n === 0 ? 'hoje' : `há ${n} dia${n === 1 ? '' : 's'}`);
+
 async function api(path, opts) {
   const res = await fetch(`/api${path}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -79,7 +86,7 @@ export default function App() {
     });
 
   const moveStage = (id, stage) => {
-    setContacts((cs) => cs.map((c) => (c.id === id ? { ...c, stage } : c)));
+    setContacts((cs) => cs.map((c) => (c.id === id ? { ...c, stage, days_in_stage: 0 } : c)));
     run(async () => {
       await api(`/contacts/${id}`, { method: 'PATCH', body: { stage } });
       loadContacts();
@@ -153,6 +160,9 @@ export default function App() {
                 {stageName(c.stage)}
                 {c.value_cents > 0 && ` · ${brl(c.value_cents)}`}
               </span>
+              {lateDays(c, config.stages) !== null && (
+                <span className="late-tag">⚠ Parado {daysLabel(c.days_in_stage)}</span>
+              )}
               <small>{c.last_body || 'Sem mensagens'}</small>
             </li>
           ))}
@@ -247,6 +257,9 @@ function Board({ contacts, stages, onMove, onOpen, onAdd, onChanged, onError }) 
   const [editing, setEditing] = useState(false);
   const [newName, setNewName] = useState('');
   const [confirmDel, setConfirmDel] = useState(null);
+  const late = contacts
+    .filter((c) => lateDays(c, stages) !== null)
+    .sort((x, y) => y.days_in_stage - x.days_in_stage);
 
   const call = async (path, method, body) => {
     onError('');
@@ -292,6 +305,21 @@ function Board({ contacts, stages, onMove, onOpen, onAdd, onChanged, onError }) 
           </form>
         )}
       </div>
+      {late.length > 0 && (
+        <div className="alert" role="status">
+          <strong>
+            ⚠ {late.length} {late.length === 1 ? 'cliente precisa' : 'clientes precisam'} de atenção
+          </strong>
+          <span>
+            {late.map((c, i) => (
+              <button key={c.id} className="link" onClick={() => onOpen(c.id)}>
+                {c.name || c.phone} ({stages.find((s) => s.key === c.stage)?.name}, {daysLabel(c.days_in_stage)})
+                {i < late.length - 1 ? ',' : ''}
+              </button>
+            ))}
+          </span>
+        </div>
+      )}
       <div className="board" style={{ '--cols': stages.length }}>
         {stages.map((stage, idx) => {
           const items = contacts.filter((c) => c.stage === stage.key);
@@ -314,6 +342,22 @@ function Board({ contacts, stages, onMove, onOpen, onAdd, onChanged, onError }) 
                       if (v && v !== stage.name) call(`/stages/${stage.key}`, 'PATCH', { name: v });
                     }}
                   />
+                  <label className="alert-days">
+                    Avisar após (dias)
+                    <input
+                      type="number"
+                      min="1"
+                      max="365"
+                      placeholder="sem aviso"
+                      key={stage.key + 'a' + stage.alert_days}
+                      defaultValue={stage.alert_days ?? ''}
+                      onBlur={(e) => {
+                        const v = e.target.value.trim();
+                        const days = v === '' ? null : Number(v);
+                        if (days !== stage.alert_days) call(`/stages/${stage.key}`, 'PATCH', { alert_days: days });
+                      }}
+                    />
+                  </label>
                   <div className="col-actions">
                     <button className="ghost" aria-label="Mover para a esquerda" disabled={idx === 0} onClick={() => move(idx, -1)}>◀</button>
                     <button className="ghost" aria-label="Mover para a direita" disabled={idx === stages.length - 1} onClick={() => move(idx, 1)}>▶</button>
@@ -333,13 +377,14 @@ function Board({ contacts, stages, onMove, onOpen, onAdd, onChanged, onError }) 
               {items.map((c) => (
                 <article
                   key={c.id}
-                  className="card"
+                  className={`card ${lateDays(c, stages) !== null ? 'late' : ''}`}
                   draggable
                   onDragStart={(e) => e.dataTransfer.setData('text/plain', String(c.id))}
                   onClick={() => onOpen(c.id)}
                 >
                   <strong>{c.name || c.phone}</strong>
                   {c.value_cents > 0 && <span className="value">{brl(c.value_cents)}</span>}
+                  {lateDays(c, stages) !== null && <span className="late-tag">⚠ Parado {daysLabel(c.days_in_stage)}</span>}
                   <small>{c.last_body || 'Sem mensagens'}</small>
                   <select
                     aria-label="Mover para etapa"

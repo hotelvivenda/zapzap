@@ -30,3 +30,8 @@ template aprovado; dentro de 24h após a última mensagem dele, texto livre func
 - Cliente novo entra na primeira coluna do funil.
 - Na primeira resposta enviada a um cliente da primeira coluna, ele vai para a segunda.
 - Todo o resto é movido à mão.
+
+## Aviso de cliente parado
+Cada etapa tem o campo "Avisar após (dias)" (em Funil > Editar etapas). Cliente que fica mais tempo
+que isso na etapa ganha um aviso no cartão e entra na lista do topo do funil. Por padrão:
+Proposta enviada = 2 dias, Aguardando pagamento = 1 dia. Mover o cliente zera a contagem.

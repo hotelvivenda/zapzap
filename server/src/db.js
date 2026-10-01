@@ -30,6 +30,12 @@ if (!db.prepare('PRAGMA table_info(contacts)').all().some((c) => c.name === 'val
   db.exec('ALTER TABLE contacts ADD COLUMN value_cents INTEGER NOT NULL DEFAULT 0');
 }
 
+// Desde quando o cliente está na etapa atual (base do aviso de cliente parado).
+if (!db.prepare('PRAGMA table_info(contacts)').all().some((c) => c.name === 'stage_changed_at')) {
+  db.exec('ALTER TABLE contacts ADD COLUMN stage_changed_at TEXT');
+  db.exec('UPDATE contacts SET stage_changed_at = COALESCE(last_message_at, created_at)');
+}
+
 // Etapas do funil ficam no banco para poderem ser editadas pela tela.
 db.exec(`CREATE TABLE IF NOT EXISTS stages (
   key TEXT PRIMARY KEY,
@@ -48,17 +54,31 @@ if (db.prepare('SELECT COUNT(*) AS n FROM stages').get().n === 0) {
   ].forEach(([key, name], i) => seed.run(key, name, i));
 }
 
-export const listStages = () => db.prepare('SELECT key, name FROM stages ORDER BY position').all();
+// Aviso: depois de quantos dias parado o cliente aparece como "precisa de atenção" (vazio = sem aviso).
+if (!db.prepare('PRAGMA table_info(stages)').all().some((c) => c.name === 'alert_days')) {
+  db.exec('ALTER TABLE stages ADD COLUMN alert_days INTEGER');
+  db.exec(`UPDATE stages SET alert_days = 2 WHERE key = 'proposta'`);
+  db.exec(`UPDATE stages SET alert_days = 1 WHERE key = 'aguardando_pagamento'`);
+}
+
+export const listStages = () =>
+  db.prepare('SELECT key, name, alert_days FROM stages ORDER BY position').all();
 export const stageExists = (key) => !!db.prepare('SELECT 1 FROM stages WHERE key = ?').get(key);
 const firstStageKey = () => db.prepare('SELECT key FROM stages ORDER BY position LIMIT 1').get().key;
 
 // Cliente novo entra na etapa informada ou, se não houver, na primeira coluna do funil.
 export function upsertContact(phone, name, stage = null, valueCents = 0) {
   db.prepare(
-    `INSERT INTO contacts (phone, name, stage, value_cents) VALUES (?, ?, ?, ?)
+    `INSERT INTO contacts (phone, name, stage, value_cents, stage_changed_at) VALUES (?, ?, ?, ?, datetime('now'))
      ON CONFLICT(phone) DO UPDATE SET name = COALESCE(contacts.name, excluded.name)`
   ).run(phone, name || null, stage || firstStageKey(), valueCents);
   return db.prepare('SELECT * FROM contacts WHERE phone = ?').get(phone);
+}
+
+export function setStage(contactId, stage) {
+  db.prepare(
+    `UPDATE contacts SET stage = ?, stage_changed_at = datetime('now') WHERE id = ? AND stage != ?`
+  ).run(stage, contactId, stage);
 }
 
 export function addMessage(contactId, direction, body, externalId = null) {

@@ -1,6 +1,6 @@
 import express from 'express';
 import { existsSync } from 'node:fs';
-import { db, listStages, stageExists, upsertContact, addMessage } from './db.js';
+import { db, listStages, stageExists, upsertContact, addMessage, setStage } from './db.js';
 import { mock } from './whatsapp/mock.js';
 import { cloud, parseWebhook } from './whatsapp/cloud.js';
 
@@ -34,10 +34,19 @@ app.put('/api/stages/order', (req, res) => {
 });
 
 app.patch('/api/stages/:key', (req, res) => {
-  const name = cleanName(req.body.name);
-  if (!name) return res.status(400).json({ error: 'Dê um nome para a etapa' });
-  const r = db.prepare('UPDATE stages SET name = ? WHERE key = ?').run(name, req.params.key);
-  r.changes ? res.json(listStages()) : res.status(404).json({ error: 'Etapa não encontrada' });
+  const { name, alert_days } = req.body;
+  if (!stageExists(req.params.key)) return res.status(404).json({ error: 'Etapa não encontrada' });
+  if (name !== undefined) {
+    const n = cleanName(name);
+    if (!n) return res.status(400).json({ error: 'Dê um nome para a etapa' });
+    db.prepare('UPDATE stages SET name = ? WHERE key = ?').run(n, req.params.key);
+  }
+  if (alert_days !== undefined) {
+    const ok = alert_days === null || (Number.isInteger(alert_days) && alert_days >= 1 && alert_days <= 365);
+    if (!ok) return res.status(400).json({ error: 'Informe um número de dias entre 1 e 365, ou deixe vazio' });
+    db.prepare('UPDATE stages SET alert_days = ? WHERE key = ?').run(alert_days, req.params.key);
+  }
+  res.json(listStages());
 });
 
 app.delete('/api/stages/:key', (req, res) => {
@@ -54,7 +63,8 @@ app.get('/api/contacts', (req, res) => {
   res.json(
     db
       .prepare(
-        `SELECT c.*, (SELECT body FROM messages WHERE contact_id = c.id ORDER BY id DESC LIMIT 1) AS last_body
+        `SELECT c.*, CAST(julianday('now') - julianday(c.stage_changed_at) AS INTEGER) AS days_in_stage,
+           (SELECT body FROM messages WHERE contact_id = c.id ORDER BY id DESC LIMIT 1) AS last_body
          FROM contacts c WHERE c.name LIKE ? OR c.phone LIKE ?
          ORDER BY COALESCE(c.last_message_at, c.created_at) DESC`
       )
@@ -77,9 +87,10 @@ app.patch('/api/contacts/:id', (req, res) => {
   if (value_cents !== undefined && !(Number.isInteger(value_cents) && value_cents >= 0))
     return res.status(400).json({ error: 'Valor inválido' });
   db.prepare(
-    `UPDATE contacts SET name = COALESCE(?, name), stage = COALESCE(?, stage), notes = COALESCE(?, notes),
+    `UPDATE contacts SET name = COALESCE(?, name), notes = COALESCE(?, notes),
        value_cents = COALESCE(?, value_cents) WHERE id = ?`
-  ).run(name ?? null, stage ?? null, notes ?? null, value_cents ?? null, req.params.id);
+  ).run(name ?? null, notes ?? null, value_cents ?? null, req.params.id);
+  if (stage !== undefined) setStage(req.params.id, stage);
   const c = db.prepare('SELECT * FROM contacts WHERE id = ?').get(req.params.id);
   c ? res.json(c) : res.status(404).json({ error: 'Contato não encontrado' });
 });
@@ -100,7 +111,7 @@ app.post('/api/contacts/:id/messages', async (req, res) => {
     // Primeira resposta a quem está na primeira coluna: avança para a segunda.
     const [first, second] = listStages();
     if (firstReply && second && c.stage === first.key) {
-      db.prepare('UPDATE contacts SET stage = ? WHERE id = ?').run(second.key, c.id);
+      setStage(c.id, second.key);
     }
     res.status(201).json({ ok: true });
   } catch (e) {
