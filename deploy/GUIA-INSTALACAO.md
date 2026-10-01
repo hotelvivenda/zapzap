@@ -38,9 +38,10 @@ curl -fsSL https://raw.githubusercontent.com/hotelvivenda/zapzap/claude/awesome-
 curl -fsSL -H "Authorization: Bearer SEU_TOKEN" https://raw.githubusercontent.com/hotelvivenda/zapzap/claude/awesome-curie-6g5pgw/deploy/install.sh -o install.sh && ZAP_GIT_TOKEN=SEU_TOKEN bash install.sh
 ```
 
-3. O instalador faz duas perguntas:
+3. O instalador faz três perguntas:
+   - **Seu nome:** é o nome que vai aparecer nas mensagens que você enviar aos clientes.
    - **Endereço do CRM:** digite, por exemplo, `crm.hotelvivenda.com.br`.
-   - **Senha de acesso:** crie uma senha com pelo menos 8 caracteres e repita. Enquanto você digita, nada aparece na tela. É normal.
+   - **Senha:** crie uma senha com pelo menos 8 caracteres e repita. Enquanto você digita, nada aparece na tela. É normal.
 4. Espere. Ele instala tudo sozinho e leva alguns minutos. No final mostra "Pronto!".
 
 Se ele avisar que o endereço não aponta para a VPS, o passo 2 ainda não terminou. Espere um pouco e rode o comando de novo.
@@ -48,9 +49,19 @@ Se ele avisar que o endereço não aponta para a VPS, o passo 2 ainda não termi
 ## Passo 4. Abrir o CRM
 1. No navegador, abra `https://crm.hotelvivenda.com.br` (o seu endereço).
 2. O cadeado pode levar 1 ou 2 minutos para aparecer na primeira vez.
-3. Entre com a senha que você criou.
+3. Entre com o usuário **admin** e a senha que você criou.
 
 Neste ponto o CRM funciona em **modo de teste**: você cadastra clientes, usa o funil e responde, mas nada é enviado ao WhatsApp. A ligação com o WhatsApp de verdade é feita depois, em um guia à parte.
+
+## Vários atendentes
+Cada pessoa da equipe entra com o próprio usuário e senha, e o **nome dela aparece em cada mensagem que enviar**.
+
+1. Entre como `admin` e abra a aba **Equipe**.
+2. Em **Novo atendente**, preencha o nome (o que aparece nas mensagens), o usuário para entrar (por exemplo `carla`) e uma senha inicial. Depois passe esses dados para a pessoa. Ela pode trocar a senha na própria aba **Equipe**.
+3. Escolha o tipo de acesso:
+   - **Atendente:** conversa com os clientes, usa o funil e mexe nos cartões. Não vê a lista da equipe e não muda as etapas do funil.
+   - **Administrador:** tudo isso, mais gerenciar a equipe e editar as etapas do funil.
+4. Quando alguém sair da equipe, clique em **Desativar**. O acesso some na hora, e as mensagens que a pessoa enviou continuam com o nome dela.
 
 ## Cópia de segurança
 - Todo dia às 3h30 o sistema guarda uma cópia dos dados em `/var/backups/zapzap` e mantém as últimas 14.
@@ -60,11 +71,11 @@ Neste ponto o CRM funciona em **modo de teste**: você cadastra clientes, usa o 
 | Para quê | Comando |
 | --- | --- |
 | Atualizar o CRM | rodar de novo o comando do passo 3 (a senha e os dados são mantidos) |
-| Trocar a senha | `zapzap-password` |
+| Recuperar o acesso (esqueci a senha) | `zapzap-password` |
 | Ver se está funcionando | `systemctl status zapzap` |
 | Ver mensagens de erro | `journalctl -u zapzap -n 50 --no-pager` |
 
 ## Se algo der errado
 - **A página não abre ou não tem cadeado:** o endereço (passo 2) ainda não valeu. Espere e tente de novo.
 - **O instalador parou com um erro:** copie a mensagem de erro e me mande.
-- **Esqueci a senha:** no terminal, rode `zapzap-password` e crie uma nova.
+- **Esqueci a senha:** abra o Terminal do navegador, rode `zapzap-password`, informe o usuário (Enter para `admin`) e crie uma nova senha. Um administrador também pode redefinir a senha de qualquer atendente na aba **Equipe**.

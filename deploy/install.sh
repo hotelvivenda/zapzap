@@ -31,11 +31,14 @@ FIRST_INSTALL=1
 
 # ---------- Perguntas (só na primeira instalação) ----------
 if [ "$FIRST_INSTALL" = 1 ]; then
+  ask ZAP_ADMIN_NAME "Seu nome (aparece nas mensagens que você enviar): "
+  ZAP_ADMIN_NAME=$(printf '%s' "$ZAP_ADMIN_NAME" | tr -d '"\\$\n\r' | cut -c1-60)
+  [ -n "$ZAP_ADMIN_NAME" ] || die "Informe o seu nome."
   ask ZAP_DOMAIN "Endereço do CRM (ex: crm.hotelvivenda.com.br): "
   [[ "$ZAP_DOMAIN" =~ ^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || die "Endereço inválido: $ZAP_DOMAIN"
   PW_GIVEN="${ZAP_PASSWORD:-}"
   while :; do
-    ask ZAP_PASSWORD "Crie a senha de acesso (mínimo 8 caracteres): " secret
+    ask ZAP_PASSWORD "Crie a sua senha (mínimo 8 caracteres). O usuário para entrar será: admin. " secret
     [ "${#ZAP_PASSWORD}" -ge 8 ] && break
     echo "A senha precisa ter pelo menos 8 caracteres."
     [ -z "$PW_GIVEN" ] || die "A senha informada é curta demais."
@@ -113,6 +116,7 @@ if [ "$FIRST_INSTALL" = 1 ]; then
 PORT=3000
 HOST=127.0.0.1
 CRM_PASSWORD_HASH=$HASH
+CRM_ADMIN_NAME=$ZAP_ADMIN_NAME
 WHATSAPP_PROVIDER=mock
 ENV
   chown root:zapzap "$ENV_FILE"
@@ -165,16 +169,18 @@ chmod 700 /usr/local/bin/zapzap-backup
 echo '30 3 * * * root /usr/local/bin/zapzap-backup' >/etc/cron.d/zapzap-backup
 chmod 644 /etc/cron.d/zapzap-backup
 
-# ---------- Comando para trocar a senha ----------
+# ---------- Comando para recuperar o acesso ----------
 cat >/usr/local/bin/zapzap-password <<'PW'
 #!/bin/bash
+# Define uma nova senha para um usuário (serve também para quem esqueceu a senha).
 set -euo pipefail
+read -r -p "Usuário (Enter para 'admin'): " U </dev/tty
+U=${U:-admin}
 read -r -s -p "Nova senha (mínimo 8 caracteres): " P </dev/tty; echo
 [ "${#P}" -ge 8 ] || { echo "Senha curta demais."; exit 1; }
-H=$(printf '%s' "$P" | node /opt/zapzap/server/src/hash-password.js)
-sed -i "s|^CRM_PASSWORD_HASH=.*|CRM_PASSWORD_HASH=$H|" /etc/zapzap.env
-systemctl restart zapzap
-echo "Senha alterada. Quem estava logado precisará entrar de novo."
+cd /opt/zapzap
+printf '%s' "$P" | runuser -u zapzap -- node server/src/reset-password.js "$U" 2>&1 | grep -v -i 'experimental\|trace-warnings'
+echo "Quem estava logado com esse usuário precisará entrar de novo."
 PW
 chmod 700 /usr/local/bin/zapzap-password
 
@@ -209,6 +215,8 @@ cat <<FIM
   (o cadeado pode levar 1 ou 2 minutos para aparecer na primeira vez)
 
   Cópia de segurança diária: /var/backups/zapzap (guarda 14 dias)
+  Para entrar: usuário  admin  e a senha que você criou.
+  Depois, crie os atendentes na aba Equipe.
   Para atualizar o CRM no futuro, rode este instalador de novo.
   Se algo der errado:  journalctl -u zapzap -n 50 --no-pager
 

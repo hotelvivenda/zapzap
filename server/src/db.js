@@ -30,6 +30,22 @@ if (!db.prepare('PRAGMA table_info(contacts)').all().some((c) => c.name === 'val
   db.exec('ALTER TABLE contacts ADD COLUMN value_cents INTEGER NOT NULL DEFAULT 0');
 }
 
+// Atendentes: cada pessoa tem login próprio e o nome aparece nas mensagens que enviar.
+db.exec(`CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'atendente' CHECK (role IN ('admin','atendente')),
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+for (const col of ['author_user_id INTEGER', 'author_name TEXT']) {
+  if (!db.prepare('PRAGMA table_info(messages)').all().some((c) => c.name === col.split(' ')[0])) {
+    db.exec(`ALTER TABLE messages ADD COLUMN ${col}`);
+  }
+}
+
 // Desde quando o cliente está na etapa atual (base do aviso de cliente parado).
 if (!db.prepare('PRAGMA table_info(contacts)').all().some((c) => c.name === 'stage_changed_at')) {
   db.exec('ALTER TABLE contacts ADD COLUMN stage_changed_at TEXT');
@@ -81,12 +97,14 @@ export function setStage(contactId, stage) {
   ).run(stage, contactId, stage);
 }
 
-export function addMessage(contactId, direction, body, externalId = null) {
+// `author` é quem enviou (atendente); mensagens recebidas do cliente não têm autor.
+export function addMessage(contactId, direction, body, externalId = null, author = null) {
   const r = db
     .prepare(
-      `INSERT OR IGNORE INTO messages (contact_id, direction, body, external_id) VALUES (?,?,?,?)`
+      `INSERT OR IGNORE INTO messages (contact_id, direction, body, external_id, author_user_id, author_name)
+       VALUES (?,?,?,?,?,?)`
     )
-    .run(contactId, direction, body, externalId);
+    .run(contactId, direction, body, externalId, author?.id || null, author?.name || null);
   if (r.changes) {
     db.prepare(`UPDATE contacts SET last_message_at = datetime('now') WHERE id = ?`).run(contactId);
   }

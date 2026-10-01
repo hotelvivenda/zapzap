@@ -40,3 +40,10 @@ Proposta enviada = 2 dias, Aguardando pagamento = 1 dia. Mover o cliente zera a 
 Veja `deploy/GUIA-INSTALACAO.md` (passo a passo para quem não é programador) e `deploy/install.sh`.
 O servidor exige senha (`CRM_PASSWORD_HASH`) e só aceita conexões locais; o HTTPS fica por conta do Caddy.
 Para gerar o hash de uma senha: `printf '%s' 'sua-senha' | npm run --silent set-password`.
+
+## Vários atendentes
+Cada atendente tem usuário e senha próprios e o nome aparece em cada mensagem enviada.
+O primeiro administrador (usuário `admin`) é criado na primeira execução a partir de
+`CRM_PASSWORD_HASH` e `CRM_ADMIN_NAME`; os demais são criados na aba Equipe.
+Atendentes não gerenciam a equipe nem editam as etapas do funil. Recuperar acesso pelo terminal:
+`printf '%s' 'nova-senha' | node server/src/reset-password.js admin`.

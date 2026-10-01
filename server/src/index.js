@@ -15,9 +15,11 @@ app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } }));
 const auth = setupAuth({
   passwordHash: process.env.CRM_PASSWORD_HASH,
   passwordPlain: process.env.CRM_PASSWORD,
+  adminName: process.env.CRM_ADMIN_NAME,
 });
 auth.mount(app);
 app.use('/api', auth.require);
+auth.mountUsers(app);
 
 const normalize = (p) => String(p || '').replace(/\D/g, '');
 
@@ -26,7 +28,7 @@ app.get('/api/config', (_req, res) => res.json({ provider: provider.name, stages
 // ---- Etapas do funil ----
 const cleanName = (n) => String(n || '').trim().slice(0, 40);
 
-app.post('/api/stages', (req, res) => {
+app.post('/api/stages', auth.requireAdmin, (req, res) => {
   const name = cleanName(req.body.name);
   if (!name) return res.status(400).json({ error: 'Dê um nome para a etapa' });
   const pos = db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM stages').get().p;
@@ -34,7 +36,7 @@ app.post('/api/stages', (req, res) => {
   res.status(201).json(listStages());
 });
 
-app.put('/api/stages/order', (req, res) => {
+app.put('/api/stages/order', auth.requireAdmin, (req, res) => {
   const keys = req.body.keys;
   const current = listStages().map((s) => s.key);
   if (!Array.isArray(keys) || keys.length !== current.length || !current.every((k) => keys.includes(k)))
@@ -44,7 +46,7 @@ app.put('/api/stages/order', (req, res) => {
   res.json(listStages());
 });
 
-app.patch('/api/stages/:key', (req, res) => {
+app.patch('/api/stages/:key', auth.requireAdmin, (req, res) => {
   const { name, alert_days } = req.body;
   if (!stageExists(req.params.key)) return res.status(404).json({ error: 'Etapa não encontrada' });
   if (name !== undefined) {
@@ -60,7 +62,7 @@ app.patch('/api/stages/:key', (req, res) => {
   res.json(listStages());
 });
 
-app.delete('/api/stages/:key', (req, res) => {
+app.delete('/api/stages/:key', auth.requireAdmin, (req, res) => {
   if (!stageExists(req.params.key)) return res.status(404).json({ error: 'Etapa não encontrada' });
   if (listStages().length <= 1) return res.status(400).json({ error: 'O funil precisa ter pelo menos uma etapa' });
   const n = db.prepare('SELECT COUNT(*) AS n FROM contacts WHERE stage = ?').get(req.params.key).n;
@@ -118,7 +120,7 @@ app.post('/api/contacts/:id/messages', async (req, res) => {
   try {
     const firstReply = !db.prepare(`SELECT 1 FROM messages WHERE contact_id = ? AND direction = 'out'`).get(c.id);
     const { id } = await provider.send(c.phone, text);
-    addMessage(c.id, 'out', text, id);
+    addMessage(c.id, 'out', text, id, req.user);
     // Primeira resposta a quem está na primeira coluna: avança para a segunda.
     const [first, second] = listStages();
     if (firstReply && second && c.stage === first.key) {

@@ -40,16 +40,18 @@ export default function App() {
     api('/me').then(setMe).catch(() => setMe({ auth: true, authenticated: false }));
   }, []);
   if (!me) return null;
-  if (!me.authenticated) return <Login onDone={() => setMe({ ...me, authenticated: true })} />;
+  if (!me.authenticated) return <Login onDone={() => api('/me').then(setMe)} />;
   return (
     <Crm
-      canLogout={me.auth}
+      me={me}
       onLogout={() => api('/logout', { method: 'POST' }).then(() => setMe({ ...me, authenticated: false }))}
+      onUserChange={(user) => setMe({ ...me, user })}
     />
   );
 }
 
 function Login({ onDone }) {
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -58,7 +60,7 @@ function Login({ onDone }) {
     setBusy(true);
     setError('');
     try {
-      await api('/login', { method: 'POST', body: { password } });
+      await api('/login', { method: 'POST', body: { username, password } });
       onDone();
     } catch (err) {
       setError(err.message);
@@ -70,16 +72,19 @@ function Login({ onDone }) {
     <div className="login">
       <form onSubmit={submit}>
         <h1>ZapZap CRM</h1>
-        <label htmlFor="senha">Senha de acesso</label>
-        <input id="senha" type="password" autoComplete="current-password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
+        <label htmlFor="usuario">Usuário</label>
+        <input id="usuario" autoComplete="username" autoCapitalize="none" autoFocus value={username} onChange={(e) => setUsername(e.target.value)} />
+        <label htmlFor="senha">Senha</label>
+        <input id="senha" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
         {error && <div className="error">{error}</div>}
-        <button disabled={busy || !password}>Entrar</button>
+        <button disabled={busy || !password || !username}>Entrar</button>
       </form>
     </div>
   );
 }
 
-function Crm({ canLogout, onLogout }) {
+function Crm({ me, onLogout, onUserChange }) {
+  const isAdmin = me.user?.role === 'admin';
   const [config, setConfig] = useState({ provider: '', stages: [] });
   const [contacts, setContacts] = useState([]);
   const [q, setQ] = useState('');
@@ -179,13 +184,18 @@ function Crm({ canLogout, onLogout }) {
         <strong>ZapZap CRM</strong>
         <button className={view === 'conversas' ? 'tab on' : 'tab'} onClick={() => setView('conversas')}>Conversas</button>
         <button className={view === 'funil' ? 'tab on' : 'tab'} onClick={() => setView('funil')}>Funil</button>
+        <button className={view === 'equipe' ? 'tab on' : 'tab'} onClick={() => setView('equipe')}>Equipe</button>
         <span className={`badge ${config.provider}`}>
           {config.provider === 'cloud' ? 'WhatsApp conectado' : 'Modo teste'}
         </span>
-        {canLogout && <button className="ghost" onClick={onLogout}>Sair</button>}
+        {me.demo && <DemoSwitch me={me} onChange={onUserChange} />}
+        <span className="who" title={me.user?.role === 'admin' ? 'Administrador' : 'Atendente'}>{me.user?.name}</span>
+        {me.auth && <button className="ghost" onClick={onLogout}>Sair</button>}
       </nav>
       {error && view === 'funil' && <div className="error">{error}</div>}
-      {view === 'funil' ? (
+      {view === 'equipe' ? (
+        <Team key={me.user.id} me={me} />
+      ) : view === 'funil' ? (
         <Board
           contacts={contacts}
           stages={config.stages}
@@ -194,6 +204,7 @@ function Crm({ canLogout, onLogout }) {
           onAdd={(key) => { setError(''); setDialogStage(key); setDialog('new'); }}
           onChanged={() => { reloadStages(); loadContacts(); }}
           onError={setError}
+          canEdit={isAdmin}
         />
       ) : (
     <div className="app">
@@ -238,6 +249,7 @@ function Crm({ canLogout, onLogout }) {
             <div className="messages">
               {messages.map((m) => (
                 <div key={m.id} className={`msg ${m.direction}`}>
+                  {m.direction === 'out' && m.author_name && <span className="author">{m.author_name}</span>}
                   {m.body}
                   <time>{new Date(m.created_at + 'Z').toLocaleString('pt-BR')}</time>
                 </div>
@@ -302,7 +314,7 @@ function Crm({ canLogout, onLogout }) {
   );
 }
 
-function Board({ contacts, stages, onMove, onOpen, onAdd, onChanged, onError }) {
+function Board({ contacts, stages, onMove, onOpen, onAdd, onChanged, onError, canEdit }) {
   const [over, setOver] = useState(null);
   const [editing, setEditing] = useState(false);
   const [newName, setNewName] = useState('');
@@ -338,9 +350,9 @@ function Board({ contacts, stages, onMove, onOpen, onAdd, onChanged, onError }) 
   return (
     <>
       <div className="toolbar">
-        <button className={editing ? '' : 'ghost'} onClick={() => { setEditing(!editing); setConfirmDel(null); onError(''); }}>
+        {canEdit && <button className={editing ? '' : 'ghost'} onClick={() => { setEditing(!editing); setConfirmDel(null); onError(''); }}>
           {editing ? 'Concluir edição' : 'Editar etapas'}
-        </button>
+        </button>}
         {editing && (
           <form
             onSubmit={(e) => {
@@ -493,6 +505,184 @@ function Dialog({ kind, stages, initialStage, error, onCancel, onSubmit }) {
           <button>{isNew ? 'Salvar' : 'Receber mensagem'}</button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function DemoSwitch({ me, onChange }) {
+  const [users, setUsers] = useState([]);
+  useEffect(() => { api('/users').then(setUsers).catch(() => {}); }, []);
+  return (
+    <label className="demo-switch">
+      Atendendo como
+      <select
+        value={me.user.id}
+        onChange={async (e) => onChange(await api('/demo/as', { method: 'POST', body: { id: Number(e.target.value) } }))}
+      >
+        {users.filter((u) => u.active).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+      </select>
+    </label>
+  );
+}
+
+const ROLE_LABELS = { admin: 'Administrador', atendente: 'Atendente' };
+
+function Team({ me }) {
+  const isAdmin = me.user.role === 'admin';
+  const [users, setUsers] = useState([]);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [mine, setMine] = useState({ current: '', password: '' });
+  const [fresh, setFresh] = useState({ name: '', username: '', password: '', role: 'atendente' });
+  const [resetFor, setResetFor] = useState(null);
+  const [resetPw, setResetPw] = useState('');
+  const [confirmOff, setConfirmOff] = useState(null);
+
+  const load = () => isAdmin && api('/users').then(setUsers).catch((e) => setError(e.message));
+  useEffect(() => { load(); }, []);
+
+  const run = async (fn, ok) => {
+    setError('');
+    setNotice('');
+    try {
+      await fn();
+      if (ok) setNotice(ok);
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  return (
+    <div className="team">
+      {error && <div className="error">{error}</div>}
+      {notice && <div className="notice">{notice}</div>}
+
+      <section className="panel">
+        <h2>Minha conta</h2>
+        <p className="hint">Você está como <strong>{me.user.name}</strong> ({ROLE_LABELS[me.user.role]}). Este nome aparece nas mensagens que você envia.</p>
+        {me.auth ? (
+          <form
+            className="row"
+            onSubmit={(e) => {
+              e.preventDefault();
+              run(async () => {
+                await api('/me/password', { method: 'POST', body: mine });
+                setMine({ current: '', password: '' });
+              }, 'Senha alterada.');
+            }}
+          >
+            <div>
+              <label htmlFor="p-atual">Senha atual</label>
+              <input id="p-atual" type="password" autoComplete="current-password" value={mine.current} onChange={(e) => setMine({ ...mine, current: e.target.value })} />
+            </div>
+            <div>
+              <label htmlFor="p-nova">Nova senha (mínimo 8 caracteres)</label>
+              <input id="p-nova" type="password" autoComplete="new-password" value={mine.password} onChange={(e) => setMine({ ...mine, password: e.target.value })} />
+            </div>
+            <button disabled={!mine.current || !mine.password}>Alterar senha</button>
+          </form>
+        ) : (
+          <p className="hint">O login ainda não está ativado neste sistema.</p>
+        )}
+      </section>
+
+      {isAdmin && me.auth && (
+        <>
+          <section className="panel">
+            <h2>Atendentes</h2>
+            <ul className="users">
+              {users.map((u) => (
+                <li key={u.id} className={u.active ? '' : 'off'}>
+                  <div className="u-main">
+                    <input
+                      aria-label={`Nome de ${u.name}`}
+                      key={u.id + u.name}
+                      defaultValue={u.name}
+                      onBlur={(e) => {
+                        const v = e.target.value.trim();
+                        if (v && v !== u.name) run(() => api(`/users/${u.id}`, { method: 'PATCH', body: { name: v } }));
+                      }}
+                    />
+                    <small>usuário: {u.username}{!u.active && ' · desativado'}</small>
+                  </div>
+                  <select
+                    aria-label={`Acesso de ${u.name}`}
+                    value={u.role}
+                    onChange={(e) => run(() => api(`/users/${u.id}`, { method: 'PATCH', body: { role: e.target.value } }))}
+                  >
+                    <option value="atendente">Atendente</option>
+                    <option value="admin">Administrador</option>
+                  </select>
+                  {resetFor === u.id ? (
+                    <form
+                      className="inline"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        run(async () => {
+                          await api(`/users/${u.id}`, { method: 'PATCH', body: { password: resetPw } });
+                          setResetFor(null);
+                          setResetPw('');
+                        }, `Nova senha de ${u.name} definida.`);
+                      }}
+                    >
+                      <input aria-label="Nova senha" type="text" autoComplete="off" placeholder="Nova senha" value={resetPw} onChange={(e) => setResetPw(e.target.value)} />
+                      <button>Salvar</button>
+                      <button type="button" className="ghost" onClick={() => setResetFor(null)}>Cancelar</button>
+                    </form>
+                  ) : (
+                    <button className="ghost" onClick={() => { setResetFor(u.id); setResetPw(''); }}>Redefinir senha</button>
+                  )}
+                  {u.id !== me.user.id &&
+                    (confirmOff === u.id ? (
+                      <button className="danger" onClick={() => { setConfirmOff(null); run(() => api(`/users/${u.id}`, { method: 'PATCH', body: { active: !u.active } })); }}>
+                        Confirmar
+                      </button>
+                    ) : (
+                      <button className="ghost" onClick={() => setConfirmOff(u.id)}>{u.active ? 'Desativar' : 'Reativar'}</button>
+                    ))}
+                </li>
+              ))}
+            </ul>
+            <p className="hint">Quem é desativado perde o acesso na hora, mas as mensagens que enviou continuam com o nome dele.</p>
+          </section>
+
+          <section className="panel">
+            <h2>Novo atendente</h2>
+            <form
+              className="row"
+              onSubmit={(e) => {
+                e.preventDefault();
+                run(async () => {
+                  await api('/users', { method: 'POST', body: fresh });
+                  setFresh({ name: '', username: '', password: '', role: 'atendente' });
+                }, 'Atendente criado. Passe o usuário e a senha para ele.');
+              }}
+            >
+              <div>
+                <label htmlFor="n-nome">Nome (aparece nas mensagens)</label>
+                <input id="n-nome" value={fresh.name} onChange={(e) => setFresh({ ...fresh, name: e.target.value })} placeholder="Carla" />
+              </div>
+              <div>
+                <label htmlFor="n-user">Usuário para entrar</label>
+                <input id="n-user" autoCapitalize="none" value={fresh.username} onChange={(e) => setFresh({ ...fresh, username: e.target.value })} placeholder="carla" />
+              </div>
+              <div>
+                <label htmlFor="n-senha">Senha inicial</label>
+                <input id="n-senha" type="text" autoComplete="off" value={fresh.password} onChange={(e) => setFresh({ ...fresh, password: e.target.value })} placeholder="mínimo 8 caracteres" />
+              </div>
+              <div>
+                <label htmlFor="n-papel">Acesso</label>
+                <select id="n-papel" value={fresh.role} onChange={(e) => setFresh({ ...fresh, role: e.target.value })}>
+                  <option value="atendente">Atendente</option>
+                  <option value="admin">Administrador</option>
+                </select>
+              </div>
+              <button disabled={!fresh.name || !fresh.username || !fresh.password}>Criar atendente</button>
+            </form>
+          </section>
+        </>
+      )}
     </div>
   );
 }
