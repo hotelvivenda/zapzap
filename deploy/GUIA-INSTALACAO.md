@@ -64,7 +64,7 @@ Cada pessoa da equipe entra com o próprio usuário e senha, e o **nome dela apa
 4. Quando alguém sair da equipe, clique em **Desativar**. O acesso some na hora, e as mensagens que a pessoa enviou continuam com o nome dela.
 
 ## Follow-up e respostas prontas
-- **Próximo contato:** abra a conversa de um cliente e, no painel da direita, escolha a data (ou use os botões **Amanhã**, **Em 3 dias**, **Em 1 semana**). Quando o dia chega, o cartão no funil e a faixa amarela do topo avisam. Ao enviar uma mensagem para esse cliente, o follow-up vencido é dado como concluído.
+- **Próximo contato:** abra a conversa de um cliente e, no painel da direita, diga em quanto tempo falar de novo com ele, usando os botões **Em 24h**, **Em 48h**, **Em 72h** ou **Em 1 semana** (ou escolha uma data). Quem decide o prazo é a atendente: o sistema não sugere nem decide nada sozinho. Quando o dia chega, o cartão no funil e a faixa amarela do topo avisam. Ao enviar uma mensagem para esse cliente, o follow-up vencido é dado como concluído.
 - **Respostas prontas:** na conversa, clique em **Respostas** ou digite `/` para escolher um texto pronto. Ele entra no campo de mensagem e você pode editar antes de enviar. Quem edita os textos é o administrador, na aba **Respostas**. Use `{nome}` onde entra o primeiro nome do cliente e `{atendente}` onde entra o primeiro nome de quem atende.
 
 ## Nome do atendente na conversa

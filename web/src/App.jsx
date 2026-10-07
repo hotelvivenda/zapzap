@@ -403,11 +403,15 @@ function Crm({ me, onLogout, onUserChange }) {
               <label htmlFor="followup">Próximo contato</label>
               <input id="followup" type="date" value={selected.followup_at || ''} onChange={(e) => setFollowup(e.target.value || null)} />
               <div className="quick-dates">
-                <button type="button" className="ghost" onClick={() => setFollowup(addDays(1))}>Amanhã</button>
-                <button type="button" className="ghost" onClick={() => setFollowup(addDays(3))}>Em 3 dias</button>
+                <button type="button" className="ghost" onClick={() => setFollowup(addDays(1))}>Em 24h</button>
+                <button type="button" className="ghost" onClick={() => setFollowup(addDays(2))}>Em 48h</button>
+                <button type="button" className="ghost" onClick={() => setFollowup(addDays(3))}>Em 72h</button>
                 <button type="button" className="ghost" onClick={() => setFollowup(addDays(7))}>Em 1 semana</button>
                 {selected.followup_at && <button type="button" className="ghost" onClick={() => setFollowup(null)}>Limpar</button>}
               </div>
+              {!selected.followup_at && (
+                <p className="hint">Quanto tempo até falar de novo com este cliente? O aviso aparece a partir do dia marcado.</p>
+              )}
               {selected.followup_at && (
                 <p className={`follow-tag ${followDue(selected) ? 'due' : ''}`}>{followLabel(selected.followup_at)}</p>
               )}
