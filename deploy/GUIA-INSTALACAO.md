@@ -67,6 +67,14 @@ Cada pessoa da equipe entra com o próprio usuário e senha, e o **nome dela apa
 - **Próximo contato:** abra a conversa de um cliente e, no painel da direita, diga em quanto tempo falar de novo com ele, usando os botões **Em 24h**, **Em 48h**, **Em 72h** ou **Em 1 semana** (ou escolha uma data). Quem decide o prazo é a atendente: o sistema não sugere nem decide nada sozinho. Quando o dia chega, o cartão no funil e a faixa amarela do topo avisam. Ao enviar uma mensagem para esse cliente, o follow-up vencido é dado como concluído.
 - **Respostas prontas:** na conversa, clique em **Respostas** ou digite `/` para escolher um texto pronto. Ele entra no campo de mensagem e você pode editar antes de enviar. Quem edita os textos é o administrador, na aba **Respostas**. Use `{nome}` onde entra o primeiro nome do cliente e `{atendente}` onde entra o primeiro nome de quem atende.
 
+## Fotos, áudios, vídeos e documentos
+- Quando o hóspede manda uma **foto**, ela aparece na conversa (clique para ampliar). Uma **mensagem de voz** aparece com um botão de play, para você ouvir ali mesmo. **Vídeos** também tocam na conversa, e **documentos** (PDF, comprovante) aparecem como um link para baixar.
+- Se o hóspede mandar só a foto ou o áudio, a lista de conversas mostra "Foto" ou "Áudio" no lugar do texto.
+- Se não for possível baixar o arquivo, ou se for um tipo que o CRM ainda não mostra (como localização), aparece um aviso na conversa para a equipe ver no WhatsApp. Nada fica sem aparecer.
+- **Por enquanto o CRM só recebe** esses arquivos. Para enviar foto ou documento ao hóspede ainda não há botão.
+- Os arquivos ficam guardados **na sua VPS**, na pasta `/opt/zapzap/data/media`, e entram na cópia de segurança diária. Para ver quanto espaço está sobrando, digite `df -h /`. Para ver quanto os arquivos ocupam, digite `du -sh /opt/zapzap/data/media`.
+- Fotos de documento de identidade enviadas pelos hóspedes ficam no seu servidor. Vale tratar com cuidado, por causa da LGPD.
+
 ## Nome do atendente na conversa
 - No topo de cada conversa aparece **"Atendido por"** e o nome de quem respondeu por último ao hóspede.
 - Quando o WhatsApp de verdade estiver ligado, cada mensagem enviada começa com o nome de quem a escreveu, em negrito. Por exemplo: **Carla Reis · Hotel Vivenda**, e na linha de baixo o texto. Assim o hóspede sabe com quem está falando.

@@ -3,7 +3,9 @@ import crypto from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { db, getSettings, saveSetting, signatureFor, listStages, stageExists, isFinalStage, upsertContact, addMessage, setStage, reopenIfFinal } from './db.js';
 import { mock } from './whatsapp/mock.js';
-import { cloud, parseWebhook } from './whatsapp/cloud.js';
+import { cloud, parseWebhook, downloadMedia } from './whatsapp/cloud.js';
+import { MEDIA_DIR, MAX_BYTES, MEDIA_TYPES, TYPE_LABEL, TYPE_RECEIVED, canInline, saveMedia, safeName, discardMedia } from './media.js';
+import { join, basename } from 'node:path';
 import { setupAuth } from './auth.js';
 
 const provider = process.env.WHATSAPP_PROVIDER === 'cloud' ? cloud : mock;
@@ -135,7 +137,10 @@ app.get('/api/contacts', (req, res) => {
     db
       .prepare(
         `SELECT c.*, CAST(julianday('now') - julianday(c.stage_changed_at) AS INTEGER) AS days_in_stage,
-           (SELECT body FROM messages WHERE contact_id = c.id ORDER BY id DESC LIMIT 1) AS last_body
+           (SELECT CASE WHEN body != '' THEN body ELSE CASE media_type
+              WHEN 'image' THEN 'Foto' WHEN 'audio' THEN 'Áudio' WHEN 'video' THEN 'Vídeo'
+              WHEN 'document' THEN 'Documento' WHEN 'sticker' THEN 'Figurinha' ELSE '' END END
+            FROM messages WHERE contact_id = c.id ORDER BY id DESC LIMIT 1) AS last_body
          FROM contacts c WHERE c.name LIKE ? OR c.phone LIKE ?
          ORDER BY COALESCE(c.last_message_at, c.created_at) DESC`
       )
@@ -181,7 +186,29 @@ app.patch('/api/contacts/:id', (req, res) => {
 });
 
 app.get('/api/contacts/:id/messages', (req, res) => {
-  res.json(db.prepare('SELECT * FROM messages WHERE contact_id = ? ORDER BY id').all(req.params.id));
+  res.json(
+    db
+      .prepare(
+        `SELECT id, contact_id, direction, body, created_at, author_name, media_type, media_mime, media_name
+         FROM messages WHERE contact_id = ? ORDER BY id`
+      )
+      .all(req.params.id)
+  );
+});
+
+// Abre o arquivo de uma mensagem. Só tipos seguros abrem na tela; o resto baixa, e nunca é executado.
+app.get('/api/messages/:id/media', (req, res) => {
+  const m = db.prepare('SELECT media_type, media_file, media_mime, media_name FROM messages WHERE id = ?').get(req.params.id);
+  if (!m?.media_file) return res.status(404).json({ error: 'Arquivo não encontrado' });
+  const inline = canInline(m.media_type, m.media_mime);
+  res.setHeader('Content-Type', m.media_mime || 'application/octet-stream');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+  res.setHeader('Cache-Control', 'private, max-age=86400');
+  res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename="${safeName(m.media_name || m.media_file)}"`);
+  res.sendFile(join(MEDIA_DIR, basename(m.media_file)), { dotfiles: 'allow' }, (err) => {
+    if (err && !res.headersSent) res.status(404).json({ error: 'Arquivo não encontrado' });
+  });
 });
 
 app.post('/api/contacts/:id/messages', async (req, res) => {
@@ -210,13 +237,46 @@ app.post('/api/contacts/:id/messages', async (req, res) => {
   }
 });
 
-// Simula uma mensagem recebida (só no modo de teste).
-app.post('/api/dev/incoming', (req, res) => {
+// Registra uma mensagem recebida: texto e/ou mídia (baixada na hora pela API oficial).
+const inflight = new Set(); // evita baixar duas vezes quando a Meta reenvia a mesma mensagem
+async function ingest({ phone, name, text, id = null, media = null, buffer = null, mime = null }) {
+  const c = upsertContact(phone, name);
+  if (id) {
+    if (inflight.has(id) || db.prepare('SELECT 1 FROM messages WHERE external_id = ?').get(id)) return; // repetida
+    inflight.add(id);
+  }
+  let saved = null;
+  try {
+    let body = text || '';
+    if (media) {
+      try {
+        if (!buffer) ({ buffer, mime } = await downloadMedia(media.id, MAX_BYTES));
+        const { file, mime: finalMime } = await saveMedia(buffer, mime || media.mime, media.type);
+        saved = { type: media.type, file, mime: finalMime, name: media.filename || null };
+      } catch (e) {
+        console.error('Falha ao baixar mídia:', e.message);
+        body = `${body ? body + '\n' : ''}[${TYPE_LABEL[media.type] || 'Arquivo'} ${TYPE_RECEIVED[media.type] || 'recebido'}, mas não foi possível baixar. Veja no WhatsApp.]`;
+      }
+    }
+    if (addMessage(c.id, 'in', body, id, null, saved)) reopenIfFinal(c.id);
+    else if (saved) discardMedia(saved.file);
+  } finally {
+    if (id) inflight.delete(id);
+  }
+}
+
+// Simula uma mensagem recebida (só no modo de teste). `media` = { type, mime, name, data (base64) }.
+app.post('/api/dev/incoming', async (req, res) => {
   if (provider.name !== 'mock') return res.status(404).end();
   const phone = normalize(req.body.phone);
-  const c = upsertContact(phone, req.body.name);
-  addMessage(c.id, 'in', String(req.body.text || ''));
-  reopenIfFinal(c.id);
+  const m = req.body.media;
+  if (m && !MEDIA_TYPES.includes(m.type)) return res.status(400).json({ error: 'Tipo de mídia inválido' });
+  const buffer = m ? Buffer.from(String(m.data || ''), 'base64') : null;
+  if (m && (!buffer.length || buffer.length > 5 * 1024 * 1024)) return res.status(400).json({ error: 'Arquivo inválido ou maior que 5 MB' });
+  await ingest({
+    phone, name: req.body.name, text: String(req.body.text || ''),
+    media: m ? { type: m.type, filename: m.name } : null, buffer, mime: m?.mime,
+  });
   res.status(201).json({ ok: true });
 });
 
@@ -236,17 +296,29 @@ app.post('/webhook', (req, res) => {
   const got = Buffer.from(req.get('x-hub-signature-256') || '');
   const want = Buffer.from('sha256=' + crypto.createHmac('sha256', secret).update(req.rawBody || '').digest('hex'));
   if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return res.sendStatus(401);
-  for (const m of parseWebhook(req.body)) {
-    const c = upsertContact(m.phone, m.name);
-    if (addMessage(c.id, 'in', m.text, m.id)) reopenIfFinal(c.id);
-  }
-  res.sendStatus(200);
+  res.sendStatus(200); // a Meta exige resposta rápida; o download dos arquivos acontece em seguida
+  (async () => {
+    for (const m of parseWebhook(req.body)) {
+      try {
+        await ingest({ phone: m.phone, name: m.name, text: m.text, id: m.id, media: m.media });
+      } catch (e) {
+        console.error('Erro ao registrar mensagem recebida:', e.message);
+      }
+    }
+  })();
 });
 
 if (existsSync('web/dist')) {
   app.use(express.static('web/dist'));
   app.get('*', (_req, res) => res.sendFile('index.html', { root: 'web/dist' }));
 }
+
+// Erros sempre em formato simples, sem detalhes internos.
+app.use((err, _req, res, _next) => {
+  const status = err.status || 500;
+  if (status >= 500) console.error(err);
+  res.status(status).json({ error: status === 413 ? 'Conteúdo grande demais' : status < 500 ? 'Requisição inválida' : 'Erro interno' });
+});
 
 const port = process.env.PORT || 3000;
 const host = process.env.HOST || '127.0.0.1';

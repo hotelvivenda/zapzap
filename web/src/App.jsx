@@ -306,6 +306,7 @@ function Crm({ me, onLogout, onUserChange }) {
               {messages.map((m) => (
                 <div key={m.id} className={`msg ${m.direction}`}>
                   {m.direction === 'out' && m.author_name && <span className="author">{m.author_name}</span>}
+                  <Media m={m} />
                   {m.body}
                   <time>{new Date(m.created_at + 'Z').toLocaleString('pt-BR')}</time>
                 </div>
@@ -930,5 +931,37 @@ function Replies({ replies, onChanged }) {
         </form>
       </section>
     </div>
+  );
+}
+
+// Foto, áudio, vídeo ou documento dentro da conversa. Só tipos seguros abrem na tela; o resto vira download.
+const mediaSrc = (m) => m.media_url || `/api/messages/${m.id}/media`;
+const okInline = (m) => {
+  const mime = (m.media_mime || '').split(';')[0].toLowerCase();
+  if (m.media_type === 'image') return ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(mime);
+  if (m.media_type === 'sticker') return mime === 'image/webp';
+  if (m.media_type === 'audio') return mime.startsWith('audio/');
+  if (m.media_type === 'video') return ['video/mp4', 'video/3gpp', 'video/webm'].includes(mime);
+  return false;
+};
+
+function Media({ m }) {
+  if (!m.media_type) return null;
+  const src = mediaSrc(m);
+  if (okInline(m)) {
+    if (m.media_type === 'image')
+      return (
+        <a href={src} target="_blank" rel="noreferrer" title="Abrir em tamanho grande">
+          <img className="media-img" src={src} loading="lazy" alt="Foto enviada pelo hóspede" />
+        </a>
+      );
+    if (m.media_type === 'sticker') return <img className="media-sticker" src={src} loading="lazy" alt="Figurinha" />;
+    if (m.media_type === 'audio') return <audio className="media-audio" controls preload="none" src={src} aria-label="Mensagem de voz" />;
+    if (m.media_type === 'video') return <video className="media-video" controls preload="metadata" src={src} aria-label="Vídeo enviado" />;
+  }
+  return (
+    <a className="media-doc" href={src} download>
+      Baixar {m.media_type === 'document' ? 'documento' : 'arquivo'}: <strong>{m.media_name || 'arquivo'}</strong>
+    </a>
   );
 }

@@ -68,3 +68,9 @@ Ligar/desligar e nome do hotel: aba Equipe (administrador). Sem login (uso local
 ## Atualizar na VPS
 `zapzap-update` (instalado pelo `deploy/install.sh`): faz backup, baixa a versão mais nova do GitHub e roda o
 instalador novo. Dados, senha e configuração são mantidos. Nada se atualiza sozinho.
+
+## Mídia recebida (WhatsApp oficial)
+O webhook baixa fotos, áudios, vídeos, documentos e figurinhas na hora e guarda em `data/media` (nome aleatório).
+Áudio é convertido para MP3 com ffmpeg (toca em qualquer navegador). Só tipos seguros abrem na tela; o resto
+baixa com `Content-Disposition: attachment`. Falhas e tipos não suportados viram um aviso na conversa.
+Limite de 64 MB por arquivo. Só recebe; ainda não envia mídia.

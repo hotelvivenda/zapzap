@@ -90,6 +90,13 @@ export function signatureFor(user) {
   return hotel_name ? `${who} · ${clean(hotel_name)}` : who;
 }
 
+// Fotos, áudios, vídeos e documentos recebidos (o arquivo fica em data/media).
+for (const col of ['media_type TEXT', 'media_file TEXT', 'media_mime TEXT', 'media_name TEXT']) {
+  if (!db.prepare('PRAGMA table_info(messages)').all().some((c) => c.name === col.split(' ')[0])) {
+    db.exec(`ALTER TABLE messages ADD COLUMN ${col}`);
+  }
+}
+
 // Desde quando o cliente está na etapa atual (base do aviso de cliente parado).
 if (!db.prepare('PRAGMA table_info(contacts)').all().some((c) => c.name === 'stage_changed_at')) {
   db.exec('ALTER TABLE contacts ADD COLUMN stage_changed_at TEXT');
@@ -176,13 +183,18 @@ export function reopenIfFinal(contactId) {
 }
 
 // `author` é quem enviou (atendente); mensagens recebidas do cliente não têm autor.
-export function addMessage(contactId, direction, body, externalId = null, author = null) {
+// `media` = { type, file, mime, name } quando a mensagem traz foto, áudio, vídeo ou documento.
+export function addMessage(contactId, direction, body, externalId = null, author = null, media = null) {
   const r = db
     .prepare(
-      `INSERT OR IGNORE INTO messages (contact_id, direction, body, external_id, author_user_id, author_name)
-       VALUES (?,?,?,?,?,?)`
+      `INSERT OR IGNORE INTO messages
+         (contact_id, direction, body, external_id, author_user_id, author_name, media_type, media_file, media_mime, media_name)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`
     )
-    .run(contactId, direction, body, externalId, author?.id || null, author?.name || null);
+    .run(
+      contactId, direction, body, externalId, author?.id || null, author?.name || null,
+      media?.type ?? null, media?.file ?? null, media?.mime ?? null, media?.name ?? null
+    );
   if (r.changes) {
     db.prepare(`UPDATE contacts SET last_message_at = datetime('now') WHERE id = ?`).run(contactId);
   }

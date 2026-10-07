@@ -72,7 +72,7 @@ fi
 say "Instalando programas necessários (pode levar alguns minutos)"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y curl git ca-certificates gnupg sqlite3 ufw debian-keyring debian-archive-keyring apt-transport-https
+apt-get install -y curl git ca-certificates gnupg sqlite3 ffmpeg rsync ufw debian-keyring debian-archive-keyring apt-transport-https
 
 if ! command -v node >/dev/null || [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 22 ]; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
@@ -122,6 +122,7 @@ HOST=127.0.0.1
 CRM_PASSWORD_HASH=$HASH
 CRM_ADMIN_NAME=$ZAP_ADMIN_NAME
 WHATSAPP_PROVIDER=mock
+NODE_ENV=production
 ENV
   chown root:zapzap "$ENV_FILE"
   chmod 640 "$ENV_FILE"
@@ -167,6 +168,8 @@ OUT=/var/backups/zapzap/crm-$(date +%F).db
 rm -f "$OUT" "$OUT.gz"
 sqlite3 "$DB" ".backup '$OUT'"
 gzip -f "$OUT"
+# Fotos, áudios e documentos recebidos (só copia o que é novo).
+[ -d /opt/zapzap/data/media ] && rsync -a /opt/zapzap/data/media/ /var/backups/zapzap/media/
 find /var/backups/zapzap -name 'crm-*.db.gz' -mtime +14 -delete
 BACKUP
 chmod 700 /usr/local/bin/zapzap-backup

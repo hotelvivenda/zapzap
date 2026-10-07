@@ -153,3 +153,9 @@ button.link { background: none; color: inherit; padding: 0; text-decoration: und
 .chat header .by strong { color: var(--accent); font-size: inherit; }
 .sign-hint { margin: 0; padding: 6px 12px 0; font-size: 12px; color: var(--muted); background: var(--panel); border-top: 1px solid var(--line); }
 .sign-hint strong { color: var(--fg); }
+.media-img { display: block; max-width: 100%; max-height: 280px; border-radius: 8px; margin-bottom: 4px; }
+.media-sticker { display: block; width: 120px; height: 120px; object-fit: contain; }
+.media-video { display: block; max-width: 100%; max-height: 280px; border-radius: 8px; margin-bottom: 4px; }
+.media-audio { display: block; width: 260px; max-width: 100%; margin-bottom: 4px; }
+.media-doc { display: block; margin-bottom: 4px; color: var(--accent); overflow-wrap: anywhere; }
+.msg a { color: inherit; }
