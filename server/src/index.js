@@ -25,6 +25,37 @@ const normalize = (p) => String(p || '').replace(/\D/g, '');
 
 app.get('/api/config', (_req, res) => res.json({ provider: provider.name, stages: listStages() }));
 
+// ---- Respostas prontas ----
+const cleanReply = (b) => ({
+  title: String(b.title ?? '').trim().slice(0, 60),
+  body: String(b.body ?? '').trim().slice(0, 1000),
+});
+
+app.get('/api/replies', (_req, res) => {
+  res.json(db.prepare('SELECT id, title, body FROM quick_replies ORDER BY id').all());
+});
+
+app.post('/api/replies', auth.requireAdmin, (req, res) => {
+  const { title, body } = cleanReply(req.body);
+  if (!title || !body) return res.status(400).json({ error: 'Preencha o título e o texto da resposta' });
+  const r = db.prepare('INSERT INTO quick_replies (title, body) VALUES (?, ?)').run(title, body);
+  res.status(201).json(db.prepare('SELECT id, title, body FROM quick_replies WHERE id = ?').get(r.lastInsertRowid));
+});
+
+app.patch('/api/replies/:id', auth.requireAdmin, (req, res) => {
+  const cur = db.prepare('SELECT * FROM quick_replies WHERE id = ?').get(req.params.id);
+  if (!cur) return res.status(404).json({ error: 'Resposta não encontrada' });
+  const c = cleanReply({ title: req.body.title ?? cur.title, body: req.body.body ?? cur.body });
+  if (!c.title || !c.body) return res.status(400).json({ error: 'Preencha o título e o texto da resposta' });
+  db.prepare('UPDATE quick_replies SET title = ?, body = ? WHERE id = ?').run(c.title, c.body, cur.id);
+  res.json({ id: cur.id, ...c });
+});
+
+app.delete('/api/replies/:id', auth.requireAdmin, (req, res) => {
+  const r = db.prepare('DELETE FROM quick_replies WHERE id = ?').run(req.params.id);
+  r.changes ? res.json({ ok: true }) : res.status(404).json({ error: 'Resposta não encontrada' });
+});
+
 // ---- Etapas do funil ----
 const cleanName = (n) => String(n || '').trim().slice(0, 40);
 
@@ -94,11 +125,20 @@ app.post('/api/contacts', (req, res) => {
   res.status(201).json(upsertContact(phone, req.body.name, stage, value));
 });
 
+const isRealDate = (s) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s))) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+};
+
 app.patch('/api/contacts/:id', (req, res) => {
-  const { name, stage, notes, value_cents } = req.body;
+  const { name, stage, notes, value_cents, followup_at } = req.body;
   if (stage !== undefined && !stageExists(stage)) return res.status(400).json({ error: 'Etapa inválida' });
   if (value_cents !== undefined && !(Number.isInteger(value_cents) && value_cents >= 0))
     return res.status(400).json({ error: 'Valor inválido' });
+  if (followup_at !== undefined && followup_at !== null && !isRealDate(followup_at))
+    return res.status(400).json({ error: 'Data inválida. Use o formato AAAA-MM-DD' });
+  if (followup_at !== undefined) db.prepare('UPDATE contacts SET followup_at = ? WHERE id = ?').run(followup_at, req.params.id);
   db.prepare(
     `UPDATE contacts SET name = COALESCE(?, name), notes = COALESCE(?, notes),
        value_cents = COALESCE(?, value_cents) WHERE id = ?`

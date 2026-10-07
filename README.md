@@ -47,3 +47,9 @@ O primeiro administrador (usuário `admin`) é criado na primeira execução a p
 `CRM_PASSWORD_HASH` e `CRM_ADMIN_NAME`; os demais são criados na aba Equipe.
 Atendentes não gerenciam a equipe nem editam as etapas do funil. Recuperar acesso pelo terminal:
 `printf '%s' 'nova-senha' | node server/src/reset-password.js admin`.
+
+## Follow-up e respostas prontas
+Cada cliente pode ter uma data de "Próximo contato". Follow-ups de hoje ou atrasados aparecem no cartão,
+na lista de conversas e na faixa de atenção do funil (junto com os clientes parados). Enviar uma mensagem
+conclui um follow-up vencido. As respostas prontas ficam na aba Respostas (administrador edita);
+na conversa, use o botão Respostas ou digite `/`. Variáveis: `{nome}` e `{atendente}`.

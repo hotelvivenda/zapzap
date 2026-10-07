@@ -46,6 +46,25 @@ for (const col of ['author_user_id INTEGER', 'author_name TEXT']) {
   }
 }
 
+// Data combinada para voltar a falar com o cliente (AAAA-MM-DD, vazio = sem follow-up).
+if (!db.prepare('PRAGMA table_info(contacts)').all().some((c) => c.name === 'followup_at')) {
+  db.exec('ALTER TABLE contacts ADD COLUMN followup_at TEXT');
+}
+
+// Textos que a equipe usa sempre. {nome} e {atendente} são trocados na hora de usar.
+db.exec(`CREATE TABLE IF NOT EXISTS quick_replies (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL
+)`);
+if (db.prepare('SELECT COUNT(*) AS n FROM quick_replies').get().n === 0) {
+  const add = db.prepare('INSERT INTO quick_replies (title, body) VALUES (?, ?)');
+  add.run('Boas-vindas', 'Olá, {nome}! Aqui é {atendente}. Como posso ajudar?');
+  add.run('Follow-up da proposta', 'Olá, {nome}! Passando para saber se você conseguiu ver o orçamento que enviei. Posso tirar alguma dúvida ou já reservar para você?');
+  add.run('Lembrar do sinal', 'Olá, {nome}! Tudo bem? Passando para lembrar do sinal da reserva. Assim que o pagamento cair, eu confirmo tudo por aqui.');
+  add.run('Reserva confirmada', 'Reserva confirmada, {nome}! Se tiver qualquer dúvida antes da chegada, é só chamar. Aguardamos você!');
+}
+
 // Desde quando o cliente está na etapa atual (base do aviso de cliente parado).
 if (!db.prepare('PRAGMA table_info(contacts)').all().some((c) => c.name === 'stage_changed_at')) {
   db.exec('ALTER TABLE contacts ADD COLUMN stage_changed_at TEXT');

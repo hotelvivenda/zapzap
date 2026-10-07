@@ -17,6 +17,35 @@ const lateDays = (c, stages) => {
   const limit = stages.find((s) => s.key === c.stage)?.alert_days;
   return limit && c.days_in_stage >= limit ? c.days_in_stage : null;
 };
+// Follow-up: datas no formato AAAA-MM-DD, comparadas com o dia de hoje no aparelho de quem usa.
+const pad2 = (n) => String(n).padStart(2, '0');
+const addDays = (n) => {
+  const d = new Date();
+  d.setHours(12, 0, 0, 0);
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+const daysUntil = (iso) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  const t = new Date();
+  return Math.round((new Date(y, m - 1, d) - new Date(t.getFullYear(), t.getMonth(), t.getDate())) / 86400000);
+};
+const followDue = (c) => !!c.followup_at && daysUntil(c.followup_at) <= 0;
+const followLabel = (iso) => {
+  const n = daysUntil(iso);
+  const [, m, d] = iso.split('-');
+  if (n < 0) return `Follow-up atrasado ${-n} dia${n === -1 ? '' : 's'} (${d}/${m})`;
+  if (n === 0) return 'Follow-up hoje';
+  if (n === 1) return 'Follow-up amanhã';
+  return `Follow-up em ${n} dias (${d}/${m})`;
+};
+
+// Troca {nome} e {atendente} nas respostas prontas.
+const fillReply = (body, contact, user) =>
+  body
+    .replaceAll('{nome}', (contact?.name || '').trim().split(/\s+/)[0] || 'tudo bem')
+    .replaceAll('{atendente}', (user?.name || '').trim().split(/\s+/)[0] || '');
+
 const daysLabel = (n) => (n === 0 ? 'hoje' : `há ${n} dia${n === 1 ? '' : 's'}`);
 
 let onUnauthorized = () => {};
@@ -95,6 +124,10 @@ function Crm({ me, onLogout, onUserChange }) {
   const [dialog, setDialog] = useState(null);
   const [view, setView] = useState('conversas');
   const [dialogStage, setDialogStage] = useState(null);
+  const [replies, setReplies] = useState([]);
+  const [picker, setPicker] = useState(false);
+  const [info, setInfo] = useState('');
+  const inputRef = useRef(null);
   const endRef = useRef(null);
 
   const selected = contacts.find((c) => c.id === selectedId);
@@ -103,7 +136,8 @@ function Crm({ me, onLogout, onUserChange }) {
   const loadContacts = () => api(`/contacts?q=${encodeURIComponent(q)}`).then(setContacts).catch(() => {});
   const loadMessages = (id) => api(`/contacts/${id}/messages`).then(setMessages).catch(() => {});
 
-  useEffect(() => { api('/config').then(setConfig); }, []);
+  const loadReplies = () => api('/replies').then(setReplies).catch(() => {});
+  useEffect(() => { api('/config').then(setConfig); loadReplies(); }, []);
   useEffect(() => {
     loadContacts();
     const t = setInterval(loadContacts, 4000);
@@ -128,6 +162,12 @@ function Crm({ me, onLogout, onUserChange }) {
     run(async () => {
       await api(`/contacts/${selectedId}/messages`, { method: 'POST', body: { text } });
       setText('');
+      setPicker(false);
+      if (followDue(selected)) {
+        await api(`/contacts/${selectedId}`, { method: 'PATCH', body: { followup_at: null } });
+        setInfo('Follow-up concluído. Se precisar, marque uma nova data em Próximo contato.');
+        setTimeout(() => setInfo(''), 6000);
+      }
       loadMessages(selectedId);
       loadContacts();
     });
@@ -138,6 +178,11 @@ function Crm({ me, onLogout, onUserChange }) {
       await api(`/contacts/${selectedId}`, { method: 'PATCH', body: patch });
       loadContacts();
     });
+
+  const setFollowup = (value) => {
+    setContacts((cs) => cs.map((c) => (c.id === selectedId ? { ...c, followup_at: value } : c)));
+    update({ followup_at: value });
+  };
 
   const moveStage = (id, stage) => {
     setContacts((cs) => cs.map((c) => (c.id === id ? { ...c, stage, days_in_stage: 0 } : c)));
@@ -184,6 +229,7 @@ function Crm({ me, onLogout, onUserChange }) {
         <strong>ZapZap CRM</strong>
         <button className={view === 'conversas' ? 'tab on' : 'tab'} onClick={() => setView('conversas')}>Conversas</button>
         <button className={view === 'funil' ? 'tab on' : 'tab'} onClick={() => setView('funil')}>Funil</button>
+        {isAdmin && <button className={view === 'respostas' ? 'tab on' : 'tab'} onClick={() => setView('respostas')}>Respostas</button>}
         <button className={view === 'equipe' ? 'tab on' : 'tab'} onClick={() => setView('equipe')}>Equipe</button>
         <span className={`badge ${config.provider}`}>
           {config.provider === 'cloud' ? 'WhatsApp conectado' : 'Modo teste'}
@@ -193,7 +239,9 @@ function Crm({ me, onLogout, onUserChange }) {
         {me.auth && <button className="ghost" onClick={onLogout}>Sair</button>}
       </nav>
       {error && view === 'funil' && <div className="error">{error}</div>}
-      {view === 'equipe' ? (
+      {view === 'respostas' && isAdmin ? (
+        <Replies replies={replies} onChanged={loadReplies} />
+      ) : view === 'equipe' ? (
         <Team key={me.user.id} me={me} />
       ) : view === 'funil' ? (
         <Board
@@ -224,6 +272,7 @@ function Crm({ me, onLogout, onUserChange }) {
               {lateDays(c, config.stages) !== null && (
                 <span className="late-tag">⚠ Parado {daysLabel(c.days_in_stage)}</span>
               )}
+              {followDue(c) && <span className="follow-tag due">{followLabel(c.followup_at)}</span>}
               <small>{c.last_body || 'Sem mensagens'}</small>
             </li>
           ))}
@@ -257,8 +306,44 @@ function Crm({ me, onLogout, onUserChange }) {
               <div ref={endRef} />
             </div>
             {error && <div className="error">{error}</div>}
+            {info && <div className="notice">{info}</div>}
+            {(picker || text.startsWith('/')) && (
+              <div className="replies" role="listbox" aria-label="Respostas prontas">
+                {replies
+                  .filter((r) => !text.startsWith('/') || r.title.toLowerCase().includes(text.slice(1).trim().toLowerCase()))
+                  .map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      role="option"
+                      onClick={() => {
+                        setText(fillReply(r.body, selected, me.user));
+                        setPicker(false);
+                        inputRef.current?.focus();
+                      }}
+                    >
+                      <strong>{r.title}</strong>
+                      <span>{fillReply(r.body, selected, me.user)}</span>
+                    </button>
+                  ))}
+                {!replies.length && <p className="empty">Nenhuma resposta pronta cadastrada.</p>}
+              </div>
+            )}
             <form onSubmit={send}>
-              <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Digite uma mensagem" />
+              <button type="button" className="ghost" aria-expanded={picker} onClick={() => setPicker(!picker)}>Respostas</button>
+              <textarea
+                ref={inputRef}
+                rows={2}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    send(e);
+                  }
+                }}
+                placeholder="Digite uma mensagem ou / para respostas prontas (Enter envia, Shift+Enter quebra a linha)"
+              />
               <button>Enviar</button>
             </form>
           </>
@@ -294,6 +379,17 @@ function Crm({ me, onLogout, onUserChange }) {
               update({ value_cents: cents });
             }}
           />
+          <label htmlFor="followup">Próximo contato</label>
+          <input id="followup" type="date" value={selected.followup_at || ''} onChange={(e) => setFollowup(e.target.value || null)} />
+          <div className="quick-dates">
+            <button type="button" className="ghost" onClick={() => setFollowup(addDays(1))}>Amanhã</button>
+            <button type="button" className="ghost" onClick={() => setFollowup(addDays(3))}>Em 3 dias</button>
+            <button type="button" className="ghost" onClick={() => setFollowup(addDays(7))}>Em 1 semana</button>
+            {selected.followup_at && <button type="button" className="ghost" onClick={() => setFollowup(null)}>Limpar</button>}
+          </div>
+          {selected.followup_at && (
+            <p className={`follow-tag ${followDue(selected) ? 'due' : ''}`}>{followLabel(selected.followup_at)}</p>
+          )}
           <label>Anotações</label>
           <textarea key={selected.id + 't'} defaultValue={selected.notes} onBlur={(e) => update({ notes: e.target.value })} />
         </aside>
@@ -319,9 +415,11 @@ function Board({ contacts, stages, onMove, onOpen, onAdd, onChanged, onError, ca
   const [editing, setEditing] = useState(false);
   const [newName, setNewName] = useState('');
   const [confirmDel, setConfirmDel] = useState(null);
-  const late = contacts
-    .filter((c) => lateDays(c, stages) !== null)
-    .sort((x, y) => y.days_in_stage - x.days_in_stage);
+  const needsAttention = contacts
+    .filter((c) => lateDays(c, stages) !== null || followDue(c))
+    .sort((x, y) => (followDue(y) ? -daysUntil(y.followup_at) + 1000 : y.days_in_stage) - (followDue(x) ? -daysUntil(x.followup_at) + 1000 : x.days_in_stage));
+  const reasons = (c) =>
+    [followDue(c) && followLabel(c.followup_at), lateDays(c, stages) !== null && `parado ${daysLabel(c.days_in_stage)}`].filter(Boolean);
 
   const call = async (path, method, body) => {
     onError('');
@@ -367,19 +465,21 @@ function Board({ contacts, stages, onMove, onOpen, onAdd, onChanged, onError, ca
           </form>
         )}
       </div>
-      {late.length > 0 && (
+      {needsAttention.length > 0 && (
         <div className="alert" role="status">
           <strong>
-            ⚠ {late.length} {late.length === 1 ? 'cliente precisa' : 'clientes precisam'} de atenção
+            ⚠ {needsAttention.length} {needsAttention.length === 1 ? 'cliente precisa' : 'clientes precisam'} de atenção
           </strong>
-          <span>
-            {late.map((c, i) => (
-              <button key={c.id} className="link" onClick={() => onOpen(c.id)}>
-                {c.name || c.phone} ({stages.find((s) => s.key === c.stage)?.name}, {daysLabel(c.days_in_stage)})
-                {i < late.length - 1 ? ',' : ''}
-              </button>
+          <ul className="alert-list">
+            {needsAttention.map((c) => (
+              <li key={c.id}>
+                <button className="link" onClick={() => onOpen(c.id)}>{c.name || c.phone}</button>
+                <span>
+                  {stages.find((s) => s.key === c.stage)?.name} · {reasons(c).join(' · ')}
+                </span>
+              </li>
             ))}
-          </span>
+          </ul>
         </div>
       )}
       <div className="board" style={{ '--cols': stages.length }}>
@@ -439,7 +539,7 @@ function Board({ contacts, stages, onMove, onOpen, onAdd, onChanged, onError, ca
               {items.map((c) => (
                 <article
                   key={c.id}
-                  className={`card ${lateDays(c, stages) !== null ? 'late' : ''}`}
+                  className={`card ${lateDays(c, stages) !== null || followDue(c) ? 'late' : ''}`}
                   draggable
                   onDragStart={(e) => e.dataTransfer.setData('text/plain', String(c.id))}
                   onClick={() => onOpen(c.id)}
@@ -447,6 +547,7 @@ function Board({ contacts, stages, onMove, onOpen, onAdd, onChanged, onError, ca
                   <strong>{c.name || c.phone}</strong>
                   {c.value_cents > 0 && <span className="value">{brl(c.value_cents)}</span>}
                   {lateDays(c, stages) !== null && <span className="late-tag">⚠ Parado {daysLabel(c.days_in_stage)}</span>}
+                  {c.followup_at && <span className={`follow-tag ${followDue(c) ? 'due' : ''}`}>{followLabel(c.followup_at)}</span>}
                   <small>{c.last_body || 'Sem mensagens'}</small>
                   <select
                     aria-label="Mover para etapa"
@@ -683,6 +784,82 @@ function Team({ me }) {
           </section>
         </>
       )}
+    </div>
+  );
+}
+
+function Replies({ replies, onChanged }) {
+  const [error, setError] = useState('');
+  const [fresh, setFresh] = useState({ title: '', body: '' });
+  const [confirmDel, setConfirmDel] = useState(null);
+
+  const run = async (fn) => {
+    setError('');
+    try {
+      await fn();
+      onChanged();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  return (
+    <div className="team">
+      {error && <div className="error">{error}</div>}
+      <section className="panel">
+        <h2>Respostas prontas</h2>
+        <p className="hint">
+          Textos que a equipe usa com frequência. Na conversa, clique em <strong>Respostas</strong> ou digite <strong>/</strong> para escolher.
+          Escreva <strong>{'{nome}'}</strong> onde entra o primeiro nome do cliente e <strong>{'{atendente}'}</strong> onde entra o primeiro nome de quem está atendendo.
+        </p>
+        <ul className="users">
+          {replies.map((r) => (
+            <li key={r.id} className="reply-row">
+              <input
+                aria-label={`Título de ${r.title}`}
+                key={r.id + r.title}
+                defaultValue={r.title}
+                onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  if (v && v !== r.title) run(() => api(`/replies/${r.id}`, { method: 'PATCH', body: { title: v } }));
+                }}
+              />
+              <textarea
+                aria-label={`Texto de ${r.title}`}
+                key={r.id + r.body}
+                defaultValue={r.body}
+                onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  if (v && v !== r.body) run(() => api(`/replies/${r.id}`, { method: 'PATCH', body: { body: v } }));
+                }}
+              />
+              {confirmDel === r.id ? (
+                <button className="danger" onClick={() => { setConfirmDel(null); run(() => api(`/replies/${r.id}`, { method: 'DELETE' })); }}>Confirmar exclusão</button>
+              ) : (
+                <button className="ghost" onClick={() => setConfirmDel(r.id)}>Excluir</button>
+              )}
+            </li>
+          ))}
+        </ul>
+      </section>
+      <section className="panel">
+        <h2>Nova resposta pronta</h2>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            run(async () => {
+              await api('/replies', { method: 'POST', body: fresh });
+              setFresh({ title: '', body: '' });
+            });
+          }}
+        >
+          <label htmlFor="r-titulo">Título (para achar rápido)</label>
+          <input id="r-titulo" value={fresh.title} onChange={(e) => setFresh({ ...fresh, title: e.target.value })} placeholder="Horário de check-in" />
+          <label htmlFor="r-texto">Texto</label>
+          <textarea id="r-texto" value={fresh.body} onChange={(e) => setFresh({ ...fresh, body: e.target.value })} placeholder="Olá, {nome}! ..." />
+          <button disabled={!fresh.title.trim() || !fresh.body.trim()}>Salvar resposta</button>
+        </form>
+      </section>
     </div>
   );
 }
