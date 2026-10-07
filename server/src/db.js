@@ -65,6 +65,31 @@ if (db.prepare('SELECT COUNT(*) AS n FROM quick_replies').get().n === 0) {
   add.run('Reserva confirmada', 'Reserva confirmada, {nome}! Se tiver qualquer dúvida antes da chegada, é só chamar. Aguardamos você!');
 }
 
+// Configurações do hotel (chave/valor).
+db.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
+
+export function getSettings() {
+  const rows = Object.fromEntries(db.prepare('SELECT key, value FROM settings').all().map((r) => [r.key, r.value]));
+  return {
+    sign_messages: rows.sign_messages !== '0', // ligado por padrão
+    hotel_name: rows.hotel_name || '',
+  };
+}
+
+export function saveSetting(key, value) {
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+}
+
+// O que o hóspede lê no começo da mensagem, em negrito no WhatsApp: *Carla Reis · Hotel Vivenda*
+export function signatureFor(user) {
+  const { sign_messages, hotel_name } = getSettings();
+  if (!sign_messages || !user || !user.id) return '';
+  const clean = (s) => String(s).replace(/[*_~`]/g, '').trim();
+  const who = clean(user.name);
+  if (!who) return '';
+  return hotel_name ? `${who} · ${clean(hotel_name)}` : who;
+}
+
 // Desde quando o cliente está na etapa atual (base do aviso de cliente parado).
 if (!db.prepare('PRAGMA table_info(contacts)').all().some((c) => c.name === 'stage_changed_at')) {
   db.exec('ALTER TABLE contacts ADD COLUMN stage_changed_at TEXT');

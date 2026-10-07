@@ -133,13 +133,14 @@ function Crm({ me, onLogout, onUserChange }) {
 
   const selected = contacts.find((c) => c.id === selectedId);
   const stageName = (key) => config.stages.find((s) => s.key === key)?.name ?? key;
+  const handler = [...messages].reverse().find((m) => m.direction === 'out' && m.author_name)?.author_name;
   const isFinal = (key) => !!config.stages.find((s) => s.key === key)?.is_final;
 
   const loadContacts = () => api(`/contacts?q=${encodeURIComponent(q)}`).then(setContacts).catch(() => {});
   const loadMessages = (id) => api(`/contacts/${id}/messages`).then(setMessages).catch(() => {});
 
   const loadReplies = () => api('/replies').then(setReplies).catch(() => {});
-  useEffect(() => { api('/config').then(setConfig); loadReplies(); }, []);
+  useEffect(() => { api('/config').then(setConfig); loadReplies(); }, [me.user?.id]);
   useEffect(() => {
     loadContacts();
     const t = setInterval(loadContacts, 4000);
@@ -147,6 +148,7 @@ function Crm({ me, onLogout, onUserChange }) {
   }, [q]);
   useEffect(() => {
     if (!selectedId) return;
+    setMessages([]);
     loadMessages(selectedId);
     const t = setInterval(() => loadMessages(selectedId), 3000);
     return () => clearInterval(t);
@@ -244,7 +246,7 @@ function Crm({ me, onLogout, onUserChange }) {
       {view === 'respostas' && isAdmin ? (
         <Replies replies={replies} onChanged={loadReplies} />
       ) : view === 'equipe' ? (
-        <Team key={me.user.id} me={me} />
+        <Team key={me.user.id} me={me} settings={config.settings} onSettings={reloadStages} />
       ) : view === 'funil' ? (
         <Board
           contacts={contacts}
@@ -291,6 +293,9 @@ function Crm({ me, onLogout, onUserChange }) {
               <div>
                 <strong>{selected.name || 'Sem nome'}</strong>
                 <small>{selected.phone}</small>
+                <small className="by">
+                  {handler ? <>Atendido por <strong>{handler}</strong></> : 'Ainda sem resposta da equipe'}
+                </small>
               </div>
               <select value={selected.stage} onChange={(e) => update({ stage: e.target.value })}>
                 {config.stages.map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}
@@ -330,6 +335,11 @@ function Crm({ me, onLogout, onUserChange }) {
                   ))}
                 {!replies.length && <p className="empty">Nenhuma resposta pronta cadastrada.</p>}
               </div>
+            )}
+            {config.settings?.sign_messages && config.signature && (
+              <p className="sign-hint">
+                O hóspede vê no começo da mensagem: <strong>{config.signature}</strong>
+              </p>
             )}
             <form onSubmit={send}>
               <button type="button" className="ghost" aria-expanded={picker} onClick={() => setPicker(!picker)}>Respostas</button>
@@ -657,7 +667,7 @@ function DemoSwitch({ me, onChange }) {
 
 const ROLE_LABELS = { admin: 'Administrador', atendente: 'Atendente' };
 
-function Team({ me }) {
+function Team({ me, settings, onSettings }) {
   const isAdmin = me.user.role === 'admin';
   const [users, setUsers] = useState([]);
   const [error, setError] = useState('');
@@ -775,6 +785,32 @@ function Team({ me }) {
               ))}
             </ul>
             <p className="hint">Quem é desativado perde o acesso na hora, mas as mensagens que enviou continuam com o nome dele.</p>
+          </section>
+
+          <section className="panel">
+            <h2>Mensagens enviadas ao hóspede</h2>
+            <label className="final-check">
+              <input
+                type="checkbox"
+                checked={!!settings?.sign_messages}
+                onChange={(e) => run(async () => { await api('/settings', { method: 'PATCH', body: { sign_messages: e.target.checked } }); onSettings(); })}
+              />
+              Começar cada mensagem com o nome do atendente
+            </label>
+            <p className="hint">
+              Como o número é do hotel, o hóspede não sabe quem está falando com ele. Com isso ligado, ele lê, por exemplo, <strong>Carla Reis · Hotel Vivenda</strong> no começo da mensagem, o que passa mais confiança.
+            </p>
+            <label htmlFor="hotel-nome">Nome do hotel (opcional, aparece depois do nome do atendente)</label>
+            <input
+              id="hotel-nome"
+              key={'hn' + (settings?.hotel_name || '')}
+              defaultValue={settings?.hotel_name || ''}
+              placeholder="Hotel Vivenda"
+              onBlur={(e) => {
+                const v = e.target.value.trim();
+                if (v !== (settings?.hotel_name || '')) run(async () => { await api('/settings', { method: 'PATCH', body: { hotel_name: v } }); onSettings(); });
+              }}
+            />
           </section>
 
           <section className="panel">

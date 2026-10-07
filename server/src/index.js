@@ -1,7 +1,7 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { db, listStages, stageExists, isFinalStage, upsertContact, addMessage, setStage, reopenIfFinal } from './db.js';
+import { db, getSettings, saveSetting, signatureFor, listStages, stageExists, isFinalStage, upsertContact, addMessage, setStage, reopenIfFinal } from './db.js';
 import { mock } from './whatsapp/mock.js';
 import { cloud, parseWebhook } from './whatsapp/cloud.js';
 import { setupAuth } from './auth.js';
@@ -23,7 +23,24 @@ auth.mountUsers(app);
 
 const normalize = (p) => String(p || '').replace(/\D/g, '');
 
-app.get('/api/config', (_req, res) => res.json({ provider: provider.name, stages: listStages() }));
+app.get('/api/config', (req, res) =>
+  res.json({
+    provider: provider.name,
+    stages: listStages(),
+    settings: getSettings(),
+    signature: signatureFor(req.user), // como o nome de quem está logado aparece para o hóspede
+  })
+);
+
+app.patch('/api/settings', auth.requireAdmin, (req, res) => {
+  const { sign_messages, hotel_name } = req.body;
+  if (sign_messages !== undefined) {
+    if (typeof sign_messages !== 'boolean') return res.status(400).json({ error: 'Valor inválido' });
+    saveSetting('sign_messages', sign_messages ? '1' : '0');
+  }
+  if (hotel_name !== undefined) saveSetting('hotel_name', String(hotel_name).trim().slice(0, 60));
+  res.json(getSettings());
+});
 
 // ---- Respostas prontas ----
 const cleanReply = (b) => ({
@@ -178,7 +195,9 @@ app.post('/api/contacts/:id/messages', async (req, res) => {
       `SELECT 1 FROM messages WHERE contact_id = ? AND direction = 'out'
          AND created_at >= (SELECT stage_changed_at FROM contacts WHERE id = ?)`
     ).get(c.id, c.id);
-    const { id } = await provider.send(c.phone, text);
+    // O hóspede recebe o nome do atendente no começo; no CRM guardamos o texto sem a assinatura.
+    const signature = signatureFor(req.user);
+    const { id } = await provider.send(c.phone, signature ? `*${signature}*\n${text}` : text);
     addMessage(c.id, 'out', text, id, req.user);
     // Primeira resposta a quem está na primeira coluna: avança para a segunda.
     const [first, second] = listStages();

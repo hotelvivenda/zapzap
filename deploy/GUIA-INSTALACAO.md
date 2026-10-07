@@ -67,6 +67,13 @@ Cada pessoa da equipe entra com o próprio usuário e senha, e o **nome dela apa
 - **Próximo contato:** abra a conversa de um cliente e, no painel da direita, escolha a data (ou use os botões **Amanhã**, **Em 3 dias**, **Em 1 semana**). Quando o dia chega, o cartão no funil e a faixa amarela do topo avisam. Ao enviar uma mensagem para esse cliente, o follow-up vencido é dado como concluído.
 - **Respostas prontas:** na conversa, clique em **Respostas** ou digite `/` para escolher um texto pronto. Ele entra no campo de mensagem e você pode editar antes de enviar. Quem edita os textos é o administrador, na aba **Respostas**. Use `{nome}` onde entra o primeiro nome do cliente e `{atendente}` onde entra o primeiro nome de quem atende.
 
+## Nome do atendente na conversa
+- No topo de cada conversa aparece **"Atendido por"** e o nome de quem respondeu por último ao hóspede.
+- Quando o WhatsApp de verdade estiver ligado, cada mensagem enviada começa com o nome de quem a escreveu, em negrito. Por exemplo: **Carla Reis · Hotel Vivenda**, e na linha de baixo o texto. Assim o hóspede sabe com quem está falando.
+- Acima do campo de mensagem você vê exatamente como o seu nome vai aparecer para o hóspede.
+- O administrador liga ou desliga isso, e define o nome do hotel que vem depois do nome do atendente, na aba **Equipe**, em **Mensagens enviadas ao hóspede**. Vem ligado por padrão.
+- No CRM, a mensagem fica guardada só com o texto, sem a assinatura, e o nome aparece acima dela.
+
 ## Clientes que já fecharam
 - Todas as conversas são abertas a **todos os atendentes**: não existe conversa de uma pessoa só. Quem estiver logado pode responder qualquer cliente, e o nome aparece na mensagem.
 - Fechado e Perdido são **etapas finais**: não têm follow-up nem aviso de parado.

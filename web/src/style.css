@@ -149,3 +149,7 @@ button.link { background: none; color: inherit; padding: 0; text-decoration: und
 .final-check { display: flex; align-items: center; gap: 6px; font-size: 13px; }
 .final-check input { width: auto; }
 .edit-hint { flex-basis: 100%; margin: 0; max-width: 720px; }
+.chat header .by { color: var(--muted); }
+.chat header .by strong { color: var(--accent); font-size: inherit; }
+.sign-hint { margin: 0; padding: 6px 12px 0; font-size: 12px; color: var(--muted); background: var(--panel); border-top: 1px solid var(--line); }
+.sign-hint strong { color: var(--fg); }

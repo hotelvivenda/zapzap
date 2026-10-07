@@ -59,3 +59,8 @@ Etapas marcadas como finais (Fechado e Perdido por padrão) não têm follow-up 
 Quando um cliente de etapa final escreve de novo, ele volta para a primeira etapa; o valor anterior é zerado
 e registrado nas anotações. A "primeira resposta" que avança o cliente da primeira para a segunda etapa
 conta desde que ele entrou na primeira etapa. Todas as conversas são visíveis a todos os atendentes.
+
+## Nome do atendente
+O topo da conversa mostra quem atendeu por último. As mensagens enviadas ao hóspede começam com
+`*Nome do atendente · Nome do hotel*` (negrito do WhatsApp); o CRM guarda o texto sem a assinatura.
+Ligar/desligar e nome do hotel: aba Equipe (administrador). Sem login (uso local) não há assinatura.
