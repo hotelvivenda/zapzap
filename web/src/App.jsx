@@ -14,8 +14,9 @@ function parseBRL(text) {
 
 // Cliente parado na etapa por mais dias do que o aviso da etapa permite.
 const lateDays = (c, stages) => {
-  const limit = stages.find((s) => s.key === c.stage)?.alert_days;
-  return limit && c.days_in_stage >= limit ? c.days_in_stage : null;
+  const st = stages.find((s) => s.key === c.stage);
+  if (!st || st.is_final) return null;
+  return st.alert_days && c.days_in_stage >= st.alert_days ? c.days_in_stage : null;
 };
 // Follow-up: datas no formato AAAA-MM-DD, comparadas com o dia de hoje no aparelho de quem usa.
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -132,6 +133,7 @@ function Crm({ me, onLogout, onUserChange }) {
 
   const selected = contacts.find((c) => c.id === selectedId);
   const stageName = (key) => config.stages.find((s) => s.key === key)?.name ?? key;
+  const isFinal = (key) => !!config.stages.find((s) => s.key === key)?.is_final;
 
   const loadContacts = () => api(`/contacts?q=${encodeURIComponent(q)}`).then(setContacts).catch(() => {});
   const loadMessages = (id) => api(`/contacts/${id}/messages`).then(setMessages).catch(() => {});
@@ -185,7 +187,7 @@ function Crm({ me, onLogout, onUserChange }) {
   };
 
   const moveStage = (id, stage) => {
-    setContacts((cs) => cs.map((c) => (c.id === id ? { ...c, stage, days_in_stage: 0 } : c)));
+    setContacts((cs) => cs.map((c) => (c.id === id ? { ...c, stage, days_in_stage: 0, ...(isFinal(stage) ? { followup_at: null } : {}) } : c)));
     run(async () => {
       await api(`/contacts/${id}`, { method: 'PATCH', body: { stage } });
       loadContacts();
@@ -365,11 +367,11 @@ function Crm({ me, onLogout, onUserChange }) {
         <aside className="details">
           <h2>Detalhes</h2>
           <label>Nome</label>
-          <input key={selected.id + 'n'} defaultValue={selected.name || ''} onBlur={(e) => update({ name: e.target.value })} />
+          <input key={selected.id + 'n' + (selected.name || '')} defaultValue={selected.name || ''} onBlur={(e) => update({ name: e.target.value })} />
           <label htmlFor="valor">Valor da negociação (R$)</label>
           <input
             id="valor"
-            key={selected.id + 'v'}
+            key={selected.id + 'v' + selected.value_cents}
             inputMode="decimal"
             placeholder="0,00"
             defaultValue={selected.value_cents ? (selected.value_cents / 100).toFixed(2).replace('.', ',') : ''}
@@ -379,19 +381,30 @@ function Crm({ me, onLogout, onUserChange }) {
               update({ value_cents: cents });
             }}
           />
-          <label htmlFor="followup">Próximo contato</label>
-          <input id="followup" type="date" value={selected.followup_at || ''} onChange={(e) => setFollowup(e.target.value || null)} />
-          <div className="quick-dates">
-            <button type="button" className="ghost" onClick={() => setFollowup(addDays(1))}>Amanhã</button>
-            <button type="button" className="ghost" onClick={() => setFollowup(addDays(3))}>Em 3 dias</button>
-            <button type="button" className="ghost" onClick={() => setFollowup(addDays(7))}>Em 1 semana</button>
-            {selected.followup_at && <button type="button" className="ghost" onClick={() => setFollowup(null)}>Limpar</button>}
-          </div>
-          {selected.followup_at && (
-            <p className={`follow-tag ${followDue(selected) ? 'due' : ''}`}>{followLabel(selected.followup_at)}</p>
+          {isFinal(selected.stage) ? (
+            <>
+              <label>Próximo contato</label>
+              <p className="hint">
+                Esta etapa é final, então não há follow-up. Se este cliente voltar a escrever, ele reaparece na primeira etapa e você pode marcar um novo contato.
+              </p>
+            </>
+          ) : (
+            <>
+              <label htmlFor="followup">Próximo contato</label>
+              <input id="followup" type="date" value={selected.followup_at || ''} onChange={(e) => setFollowup(e.target.value || null)} />
+              <div className="quick-dates">
+                <button type="button" className="ghost" onClick={() => setFollowup(addDays(1))}>Amanhã</button>
+                <button type="button" className="ghost" onClick={() => setFollowup(addDays(3))}>Em 3 dias</button>
+                <button type="button" className="ghost" onClick={() => setFollowup(addDays(7))}>Em 1 semana</button>
+                {selected.followup_at && <button type="button" className="ghost" onClick={() => setFollowup(null)}>Limpar</button>}
+              </div>
+              {selected.followup_at && (
+                <p className={`follow-tag ${followDue(selected) ? 'due' : ''}`}>{followLabel(selected.followup_at)}</p>
+              )}
+            </>
           )}
           <label>Anotações</label>
-          <textarea key={selected.id + 't'} defaultValue={selected.notes} onBlur={(e) => update({ notes: e.target.value })} />
+          <textarea key={selected.id + 't' + selected.notes} defaultValue={selected.notes} onBlur={(e) => update({ notes: e.target.value })} />
         </aside>
       )}
     </div>
@@ -452,6 +465,11 @@ function Board({ contacts, stages, onMove, onOpen, onAdd, onChanged, onError, ca
           {editing ? 'Concluir edição' : 'Editar etapas'}
         </button>}
         {editing && (
+          <p className="hint edit-hint">
+            <strong>Etapa final</strong>: o cliente já foi resolvido (fechado ou perdido). Não tem follow-up nem aviso de parado e, se ele voltar a escrever, reaparece na primeira etapa.
+          </p>
+        )}
+        {editing && (
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -504,6 +522,16 @@ function Board({ contacts, stages, onMove, onOpen, onAdd, onChanged, onError, ca
                       if (v && v !== stage.name) call(`/stages/${stage.key}`, 'PATCH', { name: v });
                     }}
                   />
+                  <label className="final-check">
+                    <input
+                      type="checkbox"
+                      checked={!!stage.is_final}
+                      disabled={idx === 0}
+                      onChange={(e) => call(`/stages/${stage.key}`, 'PATCH', { is_final: e.target.checked })}
+                    />
+                    Etapa final
+                  </label>
+                  {!stage.is_final && (
                   <label className="alert-days">
                     Avisar após (dias)
                     <input
@@ -520,6 +548,7 @@ function Board({ contacts, stages, onMove, onOpen, onAdd, onChanged, onError, ca
                       }}
                     />
                   </label>
+                  )}
                   <div className="col-actions">
                     <button className="ghost" aria-label="Mover para a esquerda" disabled={idx === 0} onClick={() => move(idx, -1)}>◀</button>
                     <button className="ghost" aria-label="Mover para a direita" disabled={idx === stages.length - 1} onClick={() => move(idx, 1)}>▶</button>

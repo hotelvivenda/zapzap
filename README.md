@@ -53,3 +53,9 @@ Cada cliente pode ter uma data de "Próximo contato". Follow-ups de hoje ou atra
 na lista de conversas e na faixa de atenção do funil (junto com os clientes parados). Enviar uma mensagem
 conclui um follow-up vencido. As respostas prontas ficam na aba Respostas (administrador edita);
 na conversa, use o botão Respostas ou digite `/`. Variáveis: `{nome}` e `{atendente}`.
+
+## Etapas finais e clientes que voltam
+Etapas marcadas como finais (Fechado e Perdido por padrão) não têm follow-up nem aviso de parado.
+Quando um cliente de etapa final escreve de novo, ele volta para a primeira etapa; o valor anterior é zerado
+e registrado nas anotações. A "primeira resposta" que avança o cliente da primeira para a segunda etapa
+conta desde que ele entrou na primeira etapa. Todas as conversas são visíveis a todos os atendentes.

@@ -67,6 +67,12 @@ Cada pessoa da equipe entra com o próprio usuário e senha, e o **nome dela apa
 - **Próximo contato:** abra a conversa de um cliente e, no painel da direita, escolha a data (ou use os botões **Amanhã**, **Em 3 dias**, **Em 1 semana**). Quando o dia chega, o cartão no funil e a faixa amarela do topo avisam. Ao enviar uma mensagem para esse cliente, o follow-up vencido é dado como concluído.
 - **Respostas prontas:** na conversa, clique em **Respostas** ou digite `/` para escolher um texto pronto. Ele entra no campo de mensagem e você pode editar antes de enviar. Quem edita os textos é o administrador, na aba **Respostas**. Use `{nome}` onde entra o primeiro nome do cliente e `{atendente}` onde entra o primeiro nome de quem atende.
 
+## Clientes que já fecharam
+- Todas as conversas são abertas a **todos os atendentes**: não existe conversa de uma pessoa só. Quem estiver logado pode responder qualquer cliente, e o nome aparece na mensagem.
+- Fechado e Perdido são **etapas finais**: não têm follow-up nem aviso de parado.
+- Se um cliente de etapa final **voltar a escrever** (por exemplo, meses depois da estadia), o cartão reaparece sozinho na primeira etapa, como uma consulta nova. O valor antigo sai do cartão (para não contar duas vezes) e fica registrado nas anotações com a data. A partir daí o follow-up volta a funcionar.
+- Para mudar quais etapas são finais: **Funil > Editar etapas > Etapa final** (a primeira etapa não pode ser final).
+
 ## Cópia de segurança
 - Todo dia às 3h30 o sistema guarda uma cópia dos dados em `/var/backups/zapzap` e mantém as últimas 14.
 - Essa cópia fica **na mesma VPS**. Se a VPS for perdida, a cópia vai junto. Por isso, ative também os **backups automáticos da Hostinger** para a VPS (procure "Backups" ou "Snapshots" no painel).

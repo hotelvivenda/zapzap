@@ -1,7 +1,7 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { db, listStages, stageExists, upsertContact, addMessage, setStage } from './db.js';
+import { db, listStages, stageExists, isFinalStage, upsertContact, addMessage, setStage, reopenIfFinal } from './db.js';
 import { mock } from './whatsapp/mock.js';
 import { cloud, parseWebhook } from './whatsapp/cloud.js';
 import { setupAuth } from './auth.js';
@@ -78,7 +78,7 @@ app.put('/api/stages/order', auth.requireAdmin, (req, res) => {
 });
 
 app.patch('/api/stages/:key', auth.requireAdmin, (req, res) => {
-  const { name, alert_days } = req.body;
+  const { name, alert_days, is_final } = req.body;
   if (!stageExists(req.params.key)) return res.status(404).json({ error: 'Etapa não encontrada' });
   if (name !== undefined) {
     const n = cleanName(name);
@@ -89,6 +89,16 @@ app.patch('/api/stages/:key', auth.requireAdmin, (req, res) => {
     const ok = alert_days === null || (Number.isInteger(alert_days) && alert_days >= 1 && alert_days <= 365);
     if (!ok) return res.status(400).json({ error: 'Informe um número de dias entre 1 e 365, ou deixe vazio' });
     db.prepare('UPDATE stages SET alert_days = ? WHERE key = ?').run(alert_days, req.params.key);
+  }
+  if (is_final !== undefined) {
+    if (typeof is_final !== 'boolean') return res.status(400).json({ error: 'Valor inválido' });
+    if (is_final && listStages()[0].key === req.params.key)
+      return res.status(400).json({ error: 'A primeira etapa recebe os clientes novos e não pode ser final.' });
+    db.prepare('UPDATE stages SET is_final = ? WHERE key = ?').run(is_final ? 1 : 0, req.params.key);
+    if (is_final) {
+      db.prepare('UPDATE stages SET alert_days = NULL WHERE key = ?').run(req.params.key);
+      db.prepare('UPDATE contacts SET followup_at = NULL WHERE stage = ?').run(req.params.key);
+    }
   }
   res.json(listStages());
 });
@@ -138,6 +148,11 @@ app.patch('/api/contacts/:id', (req, res) => {
     return res.status(400).json({ error: 'Valor inválido' });
   if (followup_at !== undefined && followup_at !== null && !isRealDate(followup_at))
     return res.status(400).json({ error: 'Data inválida. Use o formato AAAA-MM-DD' });
+  if (followup_at) {
+    const cur = db.prepare('SELECT stage FROM contacts WHERE id = ?').get(req.params.id);
+    if (cur && isFinalStage(stage ?? cur.stage))
+      return res.status(400).json({ error: 'Cliente de etapa final não tem follow-up. Se ele voltar a escrever, o follow-up volta a valer.' });
+  }
   if (followup_at !== undefined) db.prepare('UPDATE contacts SET followup_at = ? WHERE id = ?').run(followup_at, req.params.id);
   db.prepare(
     `UPDATE contacts SET name = COALESCE(?, name), notes = COALESCE(?, notes),
@@ -158,7 +173,11 @@ app.post('/api/contacts/:id/messages', async (req, res) => {
   if (!c) return res.status(404).json({ error: 'Contato não encontrado' });
   if (!text) return res.status(400).json({ error: 'Mensagem vazia' });
   try {
-    const firstReply = !db.prepare(`SELECT 1 FROM messages WHERE contact_id = ? AND direction = 'out'`).get(c.id);
+    // "Primeira resposta" = ainda sem resposta nossa desde que o cliente entrou nesta etapa.
+    const firstReply = !db.prepare(
+      `SELECT 1 FROM messages WHERE contact_id = ? AND direction = 'out'
+         AND created_at >= (SELECT stage_changed_at FROM contacts WHERE id = ?)`
+    ).get(c.id, c.id);
     const { id } = await provider.send(c.phone, text);
     addMessage(c.id, 'out', text, id, req.user);
     // Primeira resposta a quem está na primeira coluna: avança para a segunda.
@@ -178,6 +197,7 @@ app.post('/api/dev/incoming', (req, res) => {
   const phone = normalize(req.body.phone);
   const c = upsertContact(phone, req.body.name);
   addMessage(c.id, 'in', String(req.body.text || ''));
+  reopenIfFinal(c.id);
   res.status(201).json({ ok: true });
 });
 
@@ -199,7 +219,7 @@ app.post('/webhook', (req, res) => {
   if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return res.sendStatus(401);
   for (const m of parseWebhook(req.body)) {
     const c = upsertContact(m.phone, m.name);
-    addMessage(c.id, 'in', m.text, m.id);
+    if (addMessage(c.id, 'in', m.text, m.id)) reopenIfFinal(c.id);
   }
   res.sendStatus(200);
 });

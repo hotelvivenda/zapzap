@@ -96,8 +96,19 @@ if (!db.prepare('PRAGMA table_info(stages)').all().some((c) => c.name === 'alert
   db.exec(`UPDATE stages SET alert_days = 1 WHERE key = 'aguardando_pagamento'`);
 }
 
+// Etapa final (ex.: Fechado, Perdido): sem follow-up nem aviso de parado.
+// Se o cliente voltar a escrever, ele reaparece na primeira etapa como uma nova consulta.
+if (!db.prepare('PRAGMA table_info(stages)').all().some((c) => c.name === 'is_final')) {
+  db.exec('ALTER TABLE stages ADD COLUMN is_final INTEGER NOT NULL DEFAULT 0');
+  db.exec(`UPDATE stages SET is_final = 1 WHERE key IN ('fechado', 'perdido')`);
+}
+
 export const listStages = () =>
-  db.prepare('SELECT key, name, alert_days FROM stages ORDER BY position').all();
+  db
+    .prepare('SELECT key, name, alert_days, is_final FROM stages ORDER BY position')
+    .all()
+    .map((s) => ({ ...s, is_final: !!s.is_final }));
+export const isFinalStage = (key) => !!db.prepare('SELECT is_final FROM stages WHERE key = ?').get(key)?.is_final;
 export const stageExists = (key) => !!db.prepare('SELECT 1 FROM stages WHERE key = ?').get(key);
 const firstStageKey = () => db.prepare('SELECT key FROM stages ORDER BY position LIMIT 1').get().key;
 
@@ -112,8 +123,31 @@ export function upsertContact(phone, name, stage = null, valueCents = 0) {
 
 export function setStage(contactId, stage) {
   db.prepare(
-    `UPDATE contacts SET stage = ?, stage_changed_at = datetime('now') WHERE id = ? AND stage != ?`
-  ).run(stage, contactId, stage);
+    `UPDATE contacts SET stage = ?, stage_changed_at = datetime('now'),
+       followup_at = CASE WHEN (SELECT is_final FROM stages WHERE key = ?) THEN NULL ELSE followup_at END
+     WHERE id = ? AND stage != ?`
+  ).run(stage, stage, contactId, stage);
+}
+
+const brl = (cents) => (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+// Cliente de etapa final que volta a escrever começa uma nova negociação na primeira etapa.
+// O valor antigo sai do cartão (para não contar de novo) e fica registrado nas anotações.
+export function reopenIfFinal(contactId) {
+  const c = db.prepare('SELECT * FROM contacts WHERE id = ?').get(contactId);
+  const first = firstStageKey();
+  if (!c || c.stage === first || !isFinalStage(c.stage)) return false;
+  const old = db.prepare('SELECT name FROM stages WHERE key = ?').get(c.stage)?.name ?? c.stage;
+  const today = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const note =
+    `[${today}] Cliente voltou a escrever. Negociação anterior: etapa "${old}"` +
+    (c.value_cents > 0 ? `, ${brl(c.value_cents)}` : '') + '.';
+  db.prepare(`UPDATE contacts SET notes = ?, value_cents = 0, followup_at = NULL WHERE id = ?`).run(
+    c.notes ? `${c.notes}\n${note}` : note,
+    c.id
+  );
+  setStage(c.id, first);
+  return true;
 }
 
 // `author` é quem enviou (atendente); mensagens recebidas do cliente não têm autor.

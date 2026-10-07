@@ -146,3 +146,6 @@ button.link { background: none; color: inherit; padding: 0; text-decoration: und
 .panel form > input { margin-bottom: 8px; }
 .chat form textarea { flex: 1; min-width: 0; resize: vertical; max-height: 160px; font: inherit; }
 .chat form { align-items: flex-end; }
+.final-check { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.final-check input { width: auto; }
+.edit-hint { flex-basis: 100%; margin: 0; max-width: 720px; }
