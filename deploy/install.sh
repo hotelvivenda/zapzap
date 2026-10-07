@@ -101,6 +101,10 @@ mkdir -p "$APP_DIR"
 git -C "$APP_DIR" fetch -q --depth 1 "$GIT_URL" "${BRANCH:-HEAD}" || die "Não consegui baixar o código. Se o repositório for privado, use ZAP_GIT_TOKEN (veja o guia)."
 git -C "$APP_DIR" reset -q --hard FETCH_HEAD
 
+# Guarda de onde baixar (sem o token) e instala o comando curto de atualização.
+printf 'ZAP_REPO=%q\nZAP_BRANCH=%q\n' "$REPO" "$BRANCH" >/etc/zapzap.repo
+install -m 700 "$APP_DIR/deploy/zapzap-update.sh" /usr/local/bin/zapzap-update
+
 say "Montando o sistema"
 cd "$APP_DIR"
 npm install --omit=dev --no-audit --no-fund
@@ -217,7 +221,7 @@ cat <<FIM
   Cópia de segurança diária: /var/backups/zapzap (guarda 14 dias)
   Para entrar: usuário  admin  e a senha que você criou.
   Depois, crie os atendentes na aba Equipe.
-  Para atualizar o CRM no futuro, rode este instalador de novo.
+  Para atualizar o CRM no futuro, digite no terminal:  zapzap-update
   Se algo der errado:  journalctl -u zapzap -n 50 --no-pager
 
 FIM

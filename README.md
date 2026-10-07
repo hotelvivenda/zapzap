@@ -64,3 +64,7 @@ conta desde que ele entrou na primeira etapa. Todas as conversas são visíveis 
 O topo da conversa mostra quem atendeu por último. As mensagens enviadas ao hóspede começam com
 `*Nome do atendente · Nome do hotel*` (negrito do WhatsApp); o CRM guarda o texto sem a assinatura.
 Ligar/desligar e nome do hotel: aba Equipe (administrador). Sem login (uso local) não há assinatura.
+
+## Atualizar na VPS
+`zapzap-update` (instalado pelo `deploy/install.sh`): faz backup, baixa a versão mais nova do GitHub e roda o
+instalador novo. Dados, senha e configuração são mantidos. Nada se atualiza sozinho.

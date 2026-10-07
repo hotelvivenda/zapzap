@@ -87,7 +87,7 @@ Cada pessoa da equipe entra com o próprio usuário e senha, e o **nome dela apa
 ## Comandos úteis (no Terminal do navegador)
 | Para quê | Comando |
 | --- | --- |
-| Atualizar o CRM | rodar de novo o comando do passo 3 (a senha e os dados são mantidos) |
+| Atualizar o CRM | `zapzap-update` (faz uma cópia de segurança, baixa a versão nova e reinstala; a senha, os atendentes e as conversas são mantidos) |
 | Recuperar o acesso (esqueci a senha) | `zapzap-password` |
 | Ver se está funcionando | `systemctl status zapzap` |
 | Ver mensagens de erro | `journalctl -u zapzap -n 50 --no-pager` |
@@ -96,3 +96,13 @@ Cada pessoa da equipe entra com o próprio usuário e senha, e o **nome dela apa
 - **A página não abre ou não tem cadeado:** o endereço (passo 2) ainda não valeu. Espere e tente de novo.
 - **O instalador parou com um erro:** copie a mensagem de erro e me mande.
 - **Esqueci a senha:** abra o Terminal do navegador, rode `zapzap-password`, informe o usuário (Enter para `admin`) e crie uma nova senha. Um administrador também pode redefinir a senha de qualquer atendente na aba **Equipe**.
+
+## Como atualizar
+O CRM **nunca se atualiza sozinho**: você decide quando. Quando houver uma versão nova (uma funcionalidade nova, por exemplo), você fica sabendo por quem cuida do código, e a atualização é aplicada assim:
+
+1. Abra o **Terminal do navegador** da VPS na Hostinger.
+2. Digite `zapzap-update` e aperte Enter.
+3. Ele faz uma cópia de segurança dos dados, baixa a versão nova e reinstala. Leva poucos minutos, e o CRM fica fora do ar só alguns segundos.
+4. No navegador, atualize a página com Ctrl+F5.
+
+Se o repositório do GitHub for privado, ele pede o token de leitura na hora. Se não conseguir baixar, ele cancela sem alterar nada.
