@@ -74,3 +74,8 @@ O webhook baixa fotos, áudios, vídeos, documentos e figurinhas na hora e guard
 Áudio é convertido para MP3 com ffmpeg (toca em qualquer navegador). Só tipos seguros abrem na tela; o resto
 baixa com `Content-Disposition: attachment`. Falhas e tipos não suportados viram um aviso na conversa.
 Limite de 64 MB por arquivo. Só recebe; ainda não envia mídia.
+
+## Tipos de contato
+`contacts.kind`: hospede (padrão), fornecedor, manutencao, mercado, equipe, outro. Só hóspedes aparecem no funil e recebem
+regras de etapa (avanço na primeira resposta, volta de etapa final, aviso de parado). O tipo de um número já cadastrado
+é mantido quando ele escreve. Follow-up vale para todos os tipos. Grupos do WhatsApp não são suportados pela API oficial.

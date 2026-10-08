@@ -1,7 +1,7 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { db, getSettings, saveSetting, signatureFor, listStages, stageExists, isFinalStage, upsertContact, addMessage, setStage, reopenIfFinal } from './db.js';
+import { db, KINDS, getSettings, saveSetting, signatureFor, listStages, stageExists, isFinalStage, upsertContact, addMessage, setStage, reopenIfFinal } from './db.js';
 import { mock } from './whatsapp/mock.js';
 import { cloud, parseWebhook, downloadMedia } from './whatsapp/cloud.js';
 import { MEDIA_DIR, MAX_BYTES, MEDIA_TYPES, TYPE_LABEL, TYPE_RECEIVED, canInline, saveMedia, safeName, discardMedia } from './media.js';
@@ -151,10 +151,11 @@ app.get('/api/contacts', (req, res) => {
 app.post('/api/contacts', (req, res) => {
   const phone = normalize(req.body.phone);
   if (phone.length < 10) return res.status(400).json({ error: 'Telefone inválido (use DDI+DDD+número)' });
-  const { stage, value_cents: value = 0 } = req.body;
+  const { stage, value_cents: value = 0, kind = 'hospede' } = req.body;
+  if (!KINDS.includes(kind)) return res.status(400).json({ error: 'Tipo de contato inválido' });
   if (stage && !stageExists(stage)) return res.status(400).json({ error: 'Etapa inválida' });
   if (!(Number.isInteger(value) && value >= 0)) return res.status(400).json({ error: 'Valor inválido' });
-  res.status(201).json(upsertContact(phone, req.body.name, stage, value));
+  res.status(201).json(upsertContact(phone, req.body.name, stage, value, kind));
 });
 
 const isRealDate = (s) => {
@@ -164,15 +165,16 @@ const isRealDate = (s) => {
 };
 
 app.patch('/api/contacts/:id', (req, res) => {
-  const { name, stage, notes, value_cents, followup_at } = req.body;
+  const { name, stage, notes, value_cents, followup_at, kind } = req.body;
+  if (kind !== undefined && !KINDS.includes(kind)) return res.status(400).json({ error: 'Tipo de contato inválido' });
   if (stage !== undefined && !stageExists(stage)) return res.status(400).json({ error: 'Etapa inválida' });
   if (value_cents !== undefined && !(Number.isInteger(value_cents) && value_cents >= 0))
     return res.status(400).json({ error: 'Valor inválido' });
   if (followup_at !== undefined && followup_at !== null && !isRealDate(followup_at))
     return res.status(400).json({ error: 'Data inválida. Use o formato AAAA-MM-DD' });
   if (followup_at) {
-    const cur = db.prepare('SELECT stage FROM contacts WHERE id = ?').get(req.params.id);
-    if (cur && isFinalStage(stage ?? cur.stage))
+    const cur = db.prepare('SELECT stage, kind FROM contacts WHERE id = ?').get(req.params.id);
+    if (cur && (kind ?? cur.kind) === 'hospede' && isFinalStage(stage ?? cur.stage))
       return res.status(400).json({ error: 'Cliente de etapa final não tem follow-up. Se ele voltar a escrever, o follow-up volta a valer.' });
   }
   if (followup_at !== undefined) db.prepare('UPDATE contacts SET followup_at = ? WHERE id = ?').run(followup_at, req.params.id);
@@ -180,6 +182,7 @@ app.patch('/api/contacts/:id', (req, res) => {
     `UPDATE contacts SET name = COALESCE(?, name), notes = COALESCE(?, notes),
        value_cents = COALESCE(?, value_cents) WHERE id = ?`
   ).run(name ?? null, notes ?? null, value_cents ?? null, req.params.id);
+  if (kind !== undefined) db.prepare('UPDATE contacts SET kind = ? WHERE id = ?').run(kind, req.params.id);
   if (stage !== undefined) setStage(req.params.id, stage);
   const c = db.prepare('SELECT * FROM contacts WHERE id = ?').get(req.params.id);
   c ? res.json(c) : res.status(404).json({ error: 'Contato não encontrado' });
@@ -228,7 +231,7 @@ app.post('/api/contacts/:id/messages', async (req, res) => {
     addMessage(c.id, 'out', text, id, req.user);
     // Primeira resposta a quem está na primeira coluna: avança para a segunda.
     const [first, second] = listStages();
-    if (firstReply && second && c.stage === first.key) {
+    if (firstReply && second && c.kind === 'hospede' && c.stage === first.key) {
       setStage(c.id, second.key);
     }
     res.status(201).json({ ok: true });

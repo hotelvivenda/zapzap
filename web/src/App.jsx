@@ -13,7 +13,20 @@ function parseBRL(text) {
 }
 
 // Cliente parado na etapa por mais dias do que o aviso da etapa permite.
+// Tipos de contato. Só "hospede" entra no funil de vendas.
+const KINDS = [
+  ['hospede', 'Hóspede / cliente'],
+  ['fornecedor', 'Fornecedor'],
+  ['manutencao', 'Manutenção'],
+  ['mercado', 'Mercado'],
+  ['equipe', 'Equipe interna'],
+  ['outro', 'Outro'],
+];
+const kindName = (k) => KINDS.find((x) => x[0] === k)?.[1] ?? k;
+const isGuest = (c) => (c.kind || 'hospede') === 'hospede';
+
 const lateDays = (c, stages) => {
+  if (!isGuest(c)) return null;
   const st = stages.find((s) => s.key === c.stage);
   if (!st || st.is_final) return null;
   return st.alert_days && c.days_in_stage >= st.alert_days ? c.days_in_stage : null;
@@ -125,6 +138,7 @@ function Crm({ me, onLogout, onUserChange }) {
   const [dialog, setDialog] = useState(null);
   const [view, setView] = useState('conversas');
   const [dialogStage, setDialogStage] = useState(null);
+  const [kindFilter, setKindFilter] = useState('todos');
   const [replies, setReplies] = useState([]);
   const [picker, setPicker] = useState(false);
   const [info, setInfo] = useState('');
@@ -207,7 +221,7 @@ function Crm({ me, onLogout, onUserChange }) {
       if (value_cents === null) throw new Error('Valor inválido. Exemplo: 1260,00');
       const c = await api('/contacts', {
         method: 'POST',
-        body: { phone: form.phone, name: form.name, stage: form.stage || undefined, value_cents },
+        body: { phone: form.phone, name: form.name, kind: form.ckind, stage: form.ckind === 'hospede' ? form.stage || undefined : undefined, value_cents },
       });
       setDialog(null);
       await loadContacts();
@@ -265,14 +279,29 @@ function Crm({ me, onLogout, onUserChange }) {
           <input placeholder="Buscar nome ou telefone" value={q} onChange={(e) => setQ(e.target.value)} />
           <button onClick={() => { setDialogStage(null); setDialog('new'); }}>+ Novo</button>
         </div>
+        <div className="kind-filter" role="group" aria-label="Filtrar por tipo de contato">
+          {[['todos', 'Todos'], ...KINDS].map(([k, label]) => {
+            const n = k === 'todos' ? contacts.length : contacts.filter((c) => (c.kind || 'hospede') === k).length;
+            if (k !== 'todos' && k !== 'hospede' && n === 0 && kindFilter !== k) return null;
+            return (
+              <button key={k} type="button" className={kindFilter === k ? 'chip on' : 'chip'} onClick={() => setKindFilter(k)}>
+                {label} <span>{n}</span>
+              </button>
+            );
+          })}
+        </div>
         <ul>
-          {contacts.map((c) => (
+          {contacts.filter((c) => kindFilter === 'todos' || (c.kind || 'hospede') === kindFilter).map((c) => (
             <li key={c.id} className={c.id === selectedId ? 'active' : ''} onClick={() => setSelectedId(c.id)}>
               <strong>{c.name || c.phone}</strong>
-              <span className={`stage ${c.stage}`}>
-                {stageName(c.stage)}
-                {c.value_cents > 0 && ` · ${brl(c.value_cents)}`}
-              </span>
+              {isGuest(c) ? (
+                <span className={`stage ${c.stage}`}>
+                  {stageName(c.stage)}
+                  {c.value_cents > 0 && ` · ${brl(c.value_cents)}`}
+                </span>
+              ) : (
+                <span className="kind-tag">{kindName(c.kind)}</span>
+              )}
               {lateDays(c, config.stages) !== null && (
                 <span className="late-tag">⚠ Parado {daysLabel(c.days_in_stage)}</span>
               )}
@@ -297,9 +326,14 @@ function Crm({ me, onLogout, onUserChange }) {
                   {handler ? <>Atendido por <strong>{handler}</strong></> : 'Ainda sem resposta da equipe'}
                 </small>
               </div>
-              <select value={selected.stage} onChange={(e) => update({ stage: e.target.value })}>
-                {config.stages.map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}
+              <select aria-label="Tipo de contato" value={selected.kind || 'hospede'} onChange={(e) => update({ kind: e.target.value })}>
+                {KINDS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
               </select>
+              {isGuest(selected) && (
+                <select aria-label="Etapa do funil" value={selected.stage} onChange={(e) => update({ stage: e.target.value })}>
+                  {config.stages.map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}
+                </select>
+              )}
               {config.provider === 'mock' && <button onClick={() => setDialog('sim')}>Simular resposta</button>}
             </header>
             <div className="messages">
@@ -379,6 +413,8 @@ function Crm({ me, onLogout, onUserChange }) {
           <h2>Detalhes</h2>
           <label>Nome</label>
           <input key={selected.id + 'n' + (selected.name || '')} defaultValue={selected.name || ''} onBlur={(e) => update({ name: e.target.value })} />
+          {isGuest(selected) && (
+            <>
           <label htmlFor="valor">Valor da negociação (R$)</label>
           <input
             id="valor"
@@ -392,7 +428,9 @@ function Crm({ me, onLogout, onUserChange }) {
               update({ value_cents: cents });
             }}
           />
-          {isFinal(selected.stage) ? (
+            </>
+          )}
+          {isGuest(selected) && isFinal(selected.stage) ? (
             <>
               <label>Próximo contato</label>
               <p className="hint">
@@ -508,7 +546,7 @@ function Board({ contacts, stages, onMove, onOpen, onAdd, onChanged, onError, ca
               <li key={c.id}>
                 <button className="link" onClick={() => onOpen(c.id)}>{c.name || c.phone}</button>
                 <span>
-                  {stages.find((s) => s.key === c.stage)?.name} · {reasons(c).join(' · ')}
+                  {isGuest(c) ? stages.find((s) => s.key === c.stage)?.name : kindName(c.kind)} · {reasons(c).join(' · ')}
                 </span>
               </li>
             ))}
@@ -517,7 +555,7 @@ function Board({ contacts, stages, onMove, onOpen, onAdd, onChanged, onError, ca
       )}
       <div className="board" style={{ '--cols': stages.length }}>
         {stages.map((stage, idx) => {
-          const items = contacts.filter((c) => c.stage === stage.key);
+          const items = contacts.filter((c) => isGuest(c) && c.stage === stage.key);
           return (
             <section
               key={stage.key}
@@ -614,7 +652,7 @@ function Board({ contacts, stages, onMove, onOpen, onAdd, onChanged, onError, ca
 }
 
 function Dialog({ kind, stages, initialStage, error, onCancel, onSubmit }) {
-  const [form, setForm] = useState({ phone: '', name: '', text: '', value: '', stage: initialStage || stages[0]?.key || '' });
+  const [form, setForm] = useState({ phone: '', name: '', text: '', value: '', stage: initialStage || stages[0]?.key || '', ckind: 'hospede' });
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const isNew = kind === 'new';
   return (
@@ -631,12 +669,20 @@ function Dialog({ kind, stages, initialStage, error, onCancel, onSubmit }) {
             <input id="d-name" value={form.name} onChange={set('name')} placeholder="Maria Souza" autoFocus />
             <label htmlFor="d-phone">Telefone com DDI e DDD</label>
             <input id="d-phone" value={form.phone} onChange={set('phone')} placeholder="5511999998888" />
-            <label htmlFor="d-stage">Etapa do funil</label>
-            <select id="d-stage" value={form.stage} onChange={set('stage')}>
-              {stages.map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}
+            <label htmlFor="d-kind">Tipo de contato</label>
+            <select id="d-kind" value={form.ckind} onChange={set('ckind')}>
+              {KINDS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
             </select>
-            <label htmlFor="d-value">Valor da negociação (R$), se já houver</label>
-            <input id="d-value" inputMode="decimal" value={form.value} onChange={set('value')} placeholder="0,00" />
+            {form.ckind === 'hospede' && (
+              <>
+                <label htmlFor="d-stage">Etapa do funil</label>
+                <select id="d-stage" value={form.stage} onChange={set('stage')}>
+                  {stages.map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}
+                </select>
+                <label htmlFor="d-value">Valor da negociação (R$), se já houver</label>
+                <input id="d-value" inputMode="decimal" value={form.value} onChange={set('value')} placeholder="0,00" />
+              </>
+            )}
           </>
         ) : (
           <>

@@ -67,6 +67,14 @@ Cada pessoa da equipe entra com o próprio usuário e senha, e o **nome dela apa
 - **Próximo contato:** abra a conversa de um cliente e, no painel da direita, diga em quanto tempo falar de novo com ele, usando os botões **Em 24h**, **Em 48h**, **Em 72h** ou **Em 1 semana** (ou escolha uma data). Quem decide o prazo é a atendente: o sistema não sugere nem decide nada sozinho. Quando o dia chega, o cartão no funil e a faixa amarela do topo avisam. Ao enviar uma mensagem para esse cliente, o follow-up vencido é dado como concluído.
 - **Respostas prontas:** na conversa, clique em **Respostas** ou digite `/` para escolher um texto pronto. Ele entra no campo de mensagem e você pode editar antes de enviar. Quem edita os textos é o administrador, na aba **Respostas**. Use `{nome}` onde entra o primeiro nome do cliente e `{atendente}` onde entra o primeiro nome de quem atende.
 
+## Fornecedores, manutenção e outros contatos
+Nem todo contato é hóspede. Cada contato tem um **tipo**: Hóspede / cliente, Fornecedor, Manutenção, Mercado, Equipe interna ou Outro.
+- **Só hóspedes entram no funil de vendas.** Fornecedores, manutenção e os demais ficam apenas em **Conversas**, sem etapa, sem valor e sem aviso de "cliente parado".
+- Quem escreve pela primeira vez, sem estar cadastrado, entra como **Hóspede / cliente**. Para mudar, escolha o tipo na parte de cima da conversa, ou use o filtro por tipo na lista (Todos, Hóspede, Fornecedor...).
+- Dá para **cadastrar antes** os contatos que não são hóspedes: em **+ Novo**, escolha o tipo. Quando o fornecedor escrever, o CRM já o reconhece e o mantém fora do funil.
+- O **follow-up** funciona para qualquer tipo de contato. Por exemplo, "cobrar o orçamento do encanador em 72h" aparece na faixa amarela do funil, com o tipo ao lado do nome.
+- **Grupos de WhatsApp não chegam ao CRM** pela API oficial. Os grupos da equipe interna continuam no WhatsApp do celular.
+
 ## Fotos, áudios, vídeos e documentos
 - Quando o hóspede manda uma **foto**, ela aparece na conversa (clique para ampliar). Uma **mensagem de voz** aparece com um botão de play, para você ouvir ali mesmo. **Vídeos** também tocam na conversa, e **documentos** (PDF, comprovante) aparecem como um link para baixar.
 - Se o hóspede mandar só a foto ou o áudio, a lista de conversas mostra "Foto" ou "Áudio" no lugar do texto.

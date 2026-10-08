@@ -159,3 +159,9 @@ button.link { background: none; color: inherit; padding: 0; text-decoration: und
 .media-audio { display: block; width: 260px; max-width: 100%; margin-bottom: 4px; }
 .media-doc { display: block; margin-bottom: 4px; color: var(--accent); overflow-wrap: anywhere; }
 .msg a { color: inherit; }
+
+.kind-filter { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 8px; }
+.chip { background: transparent; color: var(--fg); border: 1px solid var(--line); border-radius: 99px; padding: 3px 10px; font-size: 12px; }
+.chip span { color: var(--muted); }
+.chip.on { background: var(--hover); border-color: var(--accent); font-weight: 600; }
+.kind-tag { font-size: 11px; width: fit-content; padding: 1px 8px; border-radius: 99px; background: var(--chip); }

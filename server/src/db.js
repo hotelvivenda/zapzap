@@ -97,6 +97,13 @@ for (const col of ['media_type TEXT', 'media_file TEXT', 'media_mime TEXT', 'med
   }
 }
 
+// Tipo do contato. Só "hospede" entra no funil de vendas; os outros (fornecedor, manutenção...)
+// ficam só nas conversas.
+export const KINDS = ['hospede', 'fornecedor', 'manutencao', 'mercado', 'equipe', 'outro'];
+if (!db.prepare('PRAGMA table_info(contacts)').all().some((c) => c.name === 'kind')) {
+  db.exec(`ALTER TABLE contacts ADD COLUMN kind TEXT NOT NULL DEFAULT 'hospede'`);
+}
+
 // Desde quando o cliente está na etapa atual (base do aviso de cliente parado).
 if (!db.prepare('PRAGMA table_info(contacts)').all().some((c) => c.name === 'stage_changed_at')) {
   db.exec('ALTER TABLE contacts ADD COLUMN stage_changed_at TEXT');
@@ -145,11 +152,12 @@ export const stageExists = (key) => !!db.prepare('SELECT 1 FROM stages WHERE key
 const firstStageKey = () => db.prepare('SELECT key FROM stages ORDER BY position LIMIT 1').get().key;
 
 // Cliente novo entra na etapa informada ou, se não houver, na primeira coluna do funil.
-export function upsertContact(phone, name, stage = null, valueCents = 0) {
+// Se o número já está cadastrado (ex.: um fornecedor), o tipo dele é mantido quando ele escreve.
+export function upsertContact(phone, name, stage = null, valueCents = 0, kind = 'hospede') {
   db.prepare(
-    `INSERT INTO contacts (phone, name, stage, value_cents, stage_changed_at) VALUES (?, ?, ?, ?, datetime('now'))
+    `INSERT INTO contacts (phone, name, stage, value_cents, kind, stage_changed_at) VALUES (?, ?, ?, ?, ?, datetime('now'))
      ON CONFLICT(phone) DO UPDATE SET name = COALESCE(contacts.name, excluded.name)`
-  ).run(phone, name || null, stage || firstStageKey(), valueCents);
+  ).run(phone, name || null, stage || firstStageKey(), valueCents, kind);
   return db.prepare('SELECT * FROM contacts WHERE phone = ?').get(phone);
 }
 
@@ -168,7 +176,7 @@ const brl = (cents) => (cents / 100).toLocaleString('pt-BR', { style: 'currency'
 export function reopenIfFinal(contactId) {
   const c = db.prepare('SELECT * FROM contacts WHERE id = ?').get(contactId);
   const first = firstStageKey();
-  if (!c || c.stage === first || !isFinalStage(c.stage)) return false;
+  if (!c || c.kind !== 'hospede' || c.stage === first || !isFinalStage(c.stage)) return false;
   const old = db.prepare('SELECT name FROM stages WHERE key = ?').get(c.stage)?.name ?? c.stage;
   const today = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   const note =
