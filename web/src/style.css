@@ -165,3 +165,11 @@ button.link { background: none; color: inherit; padding: 0; text-decoration: und
 .chip span { color: var(--muted); }
 .chip.on { background: var(--hover); border-color: var(--accent); font-weight: 600; }
 .kind-tag { font-size: 11px; width: fit-content; padding: 1px 8px; border-radius: 99px; background: var(--chip); }
+.table-scroll { overflow-x: auto; margin-top: 12px; }
+table.preview { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+table.preview th, table.preview td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; white-space: nowrap; }
+table.preview th { background: var(--hover); }
+.gap-top { margin-top: 12px; }
+ul.plain { display: grid; gap: 4px; }
+ul.plain li { padding: 0; border: 0; cursor: default; display: block; }
+ul.plain li:hover { background: none; }

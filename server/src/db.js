@@ -99,10 +99,19 @@ for (const col of ['media_type TEXT', 'media_file TEXT', 'media_mime TEXT', 'med
 
 // Tipo do contato. Só "hospede" entra no funil de vendas; os outros (fornecedor, manutenção...)
 // ficam só nas conversas.
-export const KINDS = ['hospede', 'fornecedor', 'manutencao', 'mercado', 'equipe', 'outro'];
+// 'lista' = contato importado de planilha (marketing) que ainda não escreveu; ao escrever, vira hóspede.
+export const KINDS = ['hospede', 'lista', 'fornecedor', 'manutencao', 'mercado', 'equipe', 'outro'];
 if (!db.prepare('PRAGMA table_info(contacts)').all().some((c) => c.name === 'kind')) {
   db.exec(`ALTER TABLE contacts ADD COLUMN kind TEXT NOT NULL DEFAULT 'hospede'`);
 }
+
+// Autorização para receber promoções (marketing): sim, nao ou desconhecido.
+for (const col of ["marketing_optin TEXT NOT NULL DEFAULT 'desconhecido'", 'optin_at TEXT', 'optin_source TEXT']) {
+  if (!db.prepare('PRAGMA table_info(contacts)').all().some((c) => c.name === col.split(' ')[0])) {
+    db.exec(`ALTER TABLE contacts ADD COLUMN ${col}`);
+  }
+}
+export const OPTINS = ['sim', 'nao', 'desconhecido'];
 
 // Desde quando o cliente está na etapa atual (base do aviso de cliente parado).
 if (!db.prepare('PRAGMA table_info(contacts)').all().some((c) => c.name === 'stage_changed_at')) {
@@ -207,4 +216,68 @@ export function addMessage(contactId, direction, body, externalId = null, author
     db.prepare(`UPDATE contacts SET last_message_at = datetime('now') WHERE id = ?`).run(contactId);
   }
   return r.changes > 0;
+}
+
+// Telefone da planilha -> só dígitos com DDI. Sem DDI e com 10 ou 11 dígitos, assume Brasil (55).
+export function normalizePhone(raw) {
+  const plus = String(raw ?? '').trim().startsWith('+');
+  let digits = String(raw ?? '').replace(/\D/g, '').replace(/^0+/, '');
+  if (!digits) return null;
+  if (!plus && (digits.length === 10 || digits.length === 11)) digits = '55' + digits;
+  if (digits.startsWith('55')) return digits.length === 12 || digits.length === 13 ? digits : null;
+  return plus && digits.length >= 8 && digits.length <= 15 ? digits : null;
+}
+
+// Contato de lista que escreve vira lead: entra na primeira etapa do funil como hóspede.
+export function promoteListContact(contactId) {
+  const c = db.prepare('SELECT kind FROM contacts WHERE id = ?').get(contactId);
+  if (c?.kind !== 'lista') return false;
+  db.prepare(`UPDATE contacts SET kind = 'hospede', stage = ?, stage_changed_at = datetime('now') WHERE id = ?`).run(firstStageKey(), contactId);
+  return true;
+}
+
+export function setOptin(contactId, optin, source) {
+  db.prepare(`UPDATE contacts SET marketing_optin = ?, optin_at = datetime('now'), optin_source = ? WHERE id = ?`).run(optin, source, contactId);
+}
+
+// Importa linhas { phone, name, optin }. Nunca reativa quem pediu para sair (optin 'nao' prevalece).
+export function importContacts(rows, { defaultOptin = 'desconhecido', source = 'planilha' } = {}) {
+  const first = firstStageKey();
+  const out = { criados: 0, ja_existiam: 0, autorizacao_atualizada: 0, duplicados: 0, invalidos: 0, exemplos_invalidos: [] };
+  const seen = new Set();
+  db.exec('BEGIN');
+  try {
+    rows.forEach((r, idx) => {
+      const phone = normalizePhone(r.phone);
+      if (!phone) {
+        out.invalidos += 1;
+        if (out.exemplos_invalidos.length < 15) out.exemplos_invalidos.push({ linha: idx + 2, valor: String(r.phone ?? '').slice(0, 40) });
+        return;
+      }
+      if (seen.has(phone)) return void (out.duplicados += 1);
+      seen.add(phone);
+      const optin = OPTINS.includes(r.optin) ? r.optin : defaultOptin;
+      const name = String(r.name ?? '').trim().slice(0, 80) || null;
+      const cur = db.prepare('SELECT id, marketing_optin FROM contacts WHERE phone = ?').get(phone);
+      if (!cur) {
+        db.prepare(
+          `INSERT INTO contacts (phone, name, kind, stage, stage_changed_at, marketing_optin, optin_at, optin_source)
+           VALUES (?, ?, 'lista', ?, datetime('now'), ?, ${optin === 'desconhecido' ? 'NULL' : "datetime('now')"}, ?)`
+        ).run(phone, name, first, optin, optin === 'desconhecido' ? null : source);
+        out.criados += 1;
+        return;
+      }
+      out.ja_existiam += 1;
+      const upgrade = optin === 'nao' || (optin === 'sim' && cur.marketing_optin === 'desconhecido');
+      if (upgrade && cur.marketing_optin !== 'nao') {
+        setOptin(cur.id, optin, source);
+        out.autorizacao_atualizada += 1;
+      }
+    });
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  return out;
 }

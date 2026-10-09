@@ -1,7 +1,7 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { db, KINDS, getSettings, saveSetting, signatureFor, listStages, stageExists, isFinalStage, upsertContact, addMessage, setStage, reopenIfFinal } from './db.js';
+import { db, KINDS, OPTINS, importContacts, promoteListContact, setOptin, getSettings, saveSetting, signatureFor, listStages, stageExists, isFinalStage, upsertContact, addMessage, setStage, reopenIfFinal } from './db.js';
 import { mock } from './whatsapp/mock.js';
 import { cloud, parseWebhook, downloadMedia } from './whatsapp/cloud.js';
 import { MEDIA_DIR, MAX_BYTES, MEDIA_TYPES, TYPE_LABEL, TYPE_RECEIVED, canInline, saveMedia, safeName, discardMedia } from './media.js';
@@ -12,7 +12,9 @@ const provider = process.env.WHATSAPP_PROVIDER === 'cloud' ? cloud : mock;
 const app = express();
 app.set('trust proxy', 1);
 // Guarda o corpo original: a Meta assina o webhook e a assinatura é conferida sobre ele.
-app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } }));
+// A importação de planilhas aceita um corpo maior; as demais rotas ficam com o limite normal.
+const jsonParser = express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } });
+app.use((req, res, next) => (req.path === '/api/contacts/import' ? next() : jsonParser(req, res, next)));
 
 const auth = setupAuth({
   passwordHash: process.env.CRM_PASSWORD_HASH,
@@ -42,6 +44,17 @@ app.patch('/api/settings', auth.requireAdmin, (req, res) => {
   }
   if (hotel_name !== undefined) saveSetting('hotel_name', String(hotel_name).trim().slice(0, 60));
   res.json(getSettings());
+});
+
+// ---- Importar planilha ----
+app.post('/api/contacts/import', express.json({ limit: '6mb' }), auth.requireAdmin, (req, res) => {
+  const rows = req.body.rows;
+  if (!Array.isArray(rows) || !rows.length) return res.status(400).json({ error: 'A planilha está vazia' });
+  if (rows.length > 20000) return res.status(400).json({ error: 'Máximo de 20.000 linhas por importação. Divida a planilha.' });
+  const defaultOptin = req.body.default_optin ?? 'desconhecido';
+  if (!OPTINS.includes(defaultOptin)) return res.status(400).json({ error: 'Autorização inválida' });
+  const source = String(req.body.source || 'planilha').trim().slice(0, 80) || 'planilha';
+  res.json(importContacts(rows, { defaultOptin, source: `${source} (importado por ${req.user.name})` }));
 });
 
 // ---- Respostas prontas ----
@@ -131,8 +144,17 @@ app.delete('/api/stages/:key', auth.requireAdmin, (req, res) => {
   res.json(listStages());
 });
 
+// Lista principal: conversas e cadastros. Contatos de lista (planilha) só aparecem no filtro próprio ou na busca,
+// para a tela não carregar milhares de números a cada poucos segundos.
 app.get('/api/contacts', (req, res) => {
-  const q = `%${req.query.q || ''}%`;
+  const text = String(req.query.q || '').trim();
+  const q = `%${text}%`;
+  const onlyList = req.query.kind === 'lista';
+  const where = text
+    ? '(c.name LIKE @q OR c.phone LIKE @q)'
+    : onlyList
+      ? "c.kind = 'lista'"
+      : "c.kind != 'lista'";
   res.json(
     db
       .prepare(
@@ -141,11 +163,24 @@ app.get('/api/contacts', (req, res) => {
               WHEN 'image' THEN 'Foto' WHEN 'audio' THEN 'Áudio' WHEN 'video' THEN 'Vídeo'
               WHEN 'document' THEN 'Documento' WHEN 'sticker' THEN 'Figurinha' ELSE '' END END
             FROM messages WHERE contact_id = c.id ORDER BY id DESC LIMIT 1) AS last_body
-         FROM contacts c WHERE c.name LIKE ? OR c.phone LIKE ?
-         ORDER BY COALESCE(c.last_message_at, c.created_at) DESC`
+         FROM contacts c WHERE ${where}
+         ORDER BY ${onlyList ? 'c.name COLLATE NOCASE' : 'COALESCE(c.last_message_at, c.created_at) DESC'}
+         LIMIT ${onlyList || text ? 300 : 5000}`
       )
-      .all(q, q)
+      .all(text ? { q } : {})
   );
+});
+
+app.get('/api/contacts/summary', (_req, res) => {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS lista,
+              SUM(marketing_optin = 'sim') AS autorizados,
+              SUM(marketing_optin = 'nao') AS pediram_para_sair
+       FROM contacts WHERE kind = 'lista'`
+    )
+    .get();
+  res.json({ lista: row.lista, autorizados: row.autorizados || 0, pediram_para_sair: row.pediram_para_sair || 0 });
 });
 
 app.post('/api/contacts', (req, res) => {
@@ -165,7 +200,12 @@ const isRealDate = (s) => {
 };
 
 app.patch('/api/contacts/:id', (req, res) => {
-  const { name, stage, notes, value_cents, followup_at, kind } = req.body;
+  const { name, stage, notes, value_cents, followup_at, kind, marketing_optin } = req.body;
+  if (marketing_optin !== undefined) {
+    if (!OPTINS.includes(marketing_optin)) return res.status(400).json({ error: 'Autorização inválida' });
+    if (marketing_optin === 'sim' && req.user.role !== 'admin')
+      return res.status(403).json({ error: 'Só administradores registram que o contato autorizou promoções' });
+  }
   if (kind !== undefined && !KINDS.includes(kind)) return res.status(400).json({ error: 'Tipo de contato inválido' });
   if (stage !== undefined && !stageExists(stage)) return res.status(400).json({ error: 'Etapa inválida' });
   if (value_cents !== undefined && !(Number.isInteger(value_cents) && value_cents >= 0))
@@ -183,6 +223,7 @@ app.patch('/api/contacts/:id', (req, res) => {
        value_cents = COALESCE(?, value_cents) WHERE id = ?`
   ).run(name ?? null, notes ?? null, value_cents ?? null, req.params.id);
   if (kind !== undefined) db.prepare('UPDATE contacts SET kind = ? WHERE id = ?').run(kind, req.params.id);
+  if (marketing_optin !== undefined) setOptin(req.params.id, marketing_optin, `registrado por ${req.user.name}`);
   if (stage !== undefined) setStage(req.params.id, stage);
   const c = db.prepare('SELECT * FROM contacts WHERE id = ?').get(req.params.id);
   c ? res.json(c) : res.status(404).json({ error: 'Contato não encontrado' });
@@ -240,6 +281,22 @@ app.post('/api/contacts/:id/messages', async (req, res) => {
   }
 });
 
+// Quem responde só 'parar', 'sair'... não quer mais promoções. Registramos e confirmamos.
+const OPT_OUT = ['parar', 'pare', 'sair', 'cancelar', 'stop', 'descadastrar', 'remover', 'nao quero receber', 'nao quero mais receber', 'nao quero promocoes'];
+const isOptOut = (text) =>
+  OPT_OUT.includes(String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z ]/g, '').trim());
+
+async function handleOptOut(c) {
+  setOptin(c.id, 'nao', 'pediu para sair (mensagem recebida)');
+  const text = 'Tudo bem, você não receberá mais promoções do hotel. Se precisar de algo, é só escrever.';
+  try {
+    const { id } = await provider.send(c.phone, text);
+    addMessage(c.id, 'out', text, id, { name: 'Sistema' });
+  } catch (e) {
+    console.error('Não consegui confirmar a saída da lista:', e.message);
+  }
+}
+
 // Registra uma mensagem recebida: texto e/ou mídia (baixada na hora pela API oficial).
 const inflight = new Set(); // evita baixar duas vezes quando a Meta reenvia a mesma mensagem
 async function ingest({ phone, name, text, id = null, media = null, buffer = null, mime = null }) {
@@ -261,7 +318,11 @@ async function ingest({ phone, name, text, id = null, media = null, buffer = nul
         body = `${body ? body + '\n' : ''}[${TYPE_LABEL[media.type] || 'Arquivo'} ${TYPE_RECEIVED[media.type] || 'recebido'}, mas não foi possível baixar. Veja no WhatsApp.]`;
       }
     }
-    if (addMessage(c.id, 'in', body, id, null, saved)) reopenIfFinal(c.id);
+    if (addMessage(c.id, 'in', body, id, null, saved)) {
+      promoteListContact(c.id);
+      reopenIfFinal(c.id);
+      if (isOptOut(body)) await handleOptOut(c);
+    }
     else if (saved) discardMedia(saved.file);
   } finally {
     if (id) inflight.delete(id);

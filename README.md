@@ -79,3 +79,9 @@ Limite de 64 MB por arquivo. Só recebe; ainda não envia mídia.
 `contacts.kind`: hospede (padrão), fornecedor, manutencao, mercado, equipe, outro. Só hóspedes aparecem no funil e recebem
 regras de etapa (avanço na primeira resposta, volta de etapa final, aviso de parado). O tipo de um número já cadastrado
 é mantido quando ele escreve. Follow-up vale para todos os tipos. Grupos do WhatsApp não são suportados pela API oficial.
+
+## Importação de planilha e autorização de marketing
+`POST /api/contacts/import` (admin; até 20.000 linhas; CSV lido no navegador). Contatos entram com `kind='lista'`
+(fora da lista principal e do funil; filtro próprio e busca). `marketing_optin` = sim | nao | desconhecido, com data e origem.
+Um 'nao' nunca é revertido por importação. Mensagem recebida de contato 'lista' o promove a hóspede (primeira etapa).
+Mensagens exatamente 'parar/sair/cancelar...' registram 'nao' e enviam confirmação. Campanhas ainda não implementadas.

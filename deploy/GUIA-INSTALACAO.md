@@ -67,6 +67,21 @@ Cada pessoa da equipe entra com o próprio usuário e senha, e o **nome dela apa
 - **Próximo contato:** abra a conversa de um cliente e, no painel da direita, diga em quanto tempo falar de novo com ele, usando os botões **Em 24h**, **Em 48h**, **Em 72h** ou **Em 1 semana** (ou escolha uma data). Quem decide o prazo é a atendente: o sistema não sugere nem decide nada sozinho. Quando o dia chega, o cartão no funil e a faixa amarela do topo avisam. Ao enviar uma mensagem para esse cliente, o follow-up vencido é dado como concluído.
 - **Respostas prontas:** na conversa, clique em **Respostas** ou digite `/` para escolher um texto pronto. Ele entra no campo de mensagem e você pode editar antes de enviar. Quem edita os textos é o administrador, na aba **Respostas**. Use `{nome}` onde entra o primeiro nome do cliente e `{atendente}` onde entra o primeiro nome de quem atende.
 
+## Importar a planilha de contatos (marketing)
+Na aba **Importar** (administrador) você traz os números de uma planilha.
+1. No Excel ou no Google Planilhas, salve como **CSV** (Arquivo, Fazer download ou Salvar como). A primeira linha deve ter os títulos das colunas. Deixe a coluna do telefone como **texto**, para o Excel não transformar o número em algo como 5,5E+12.
+2. Em **Importar**, escolha o arquivo. O CRM tenta descobrir sozinho as colunas de telefone, nome e autorização, e você confere na prévia.
+3. Diga se as pessoas **autorizaram receber promoções**: por uma coluna da planilha (sim/não), ou valendo para todos. Marque a confirmação e informe de onde veio a autorização, que fica registrada.
+4. Clique em **Importar**. O resultado mostra quantos contatos entraram, quantos já existiam, quantos estavam repetidos e quantos telefones eram inválidos.
+
+Como funciona:
+- Os contatos entram como **Lista de marketing**, fora do funil e fora da lista principal (para não encher a tela). Veja-os no filtro **Lista de marketing** ou pela busca.
+- Quando alguém da lista **responde**, vira **hóspede** na primeira etapa do funil, como um contato novo.
+- Telefones sem DDI e com 10 ou 11 dígitos são tratados como do Brasil (55).
+- Quem escrever **PARAR**, **SAIR** ou **CANCELAR** sozinho, na mensagem, é marcado como "não quer receber", e o CRM confirma por mensagem. Quem saiu **não volta** para a lista por uma importação nova.
+- No painel de cada contato, **Promoções (marketing)** mostra a situação e quem registrou. Qualquer atendente pode marcar "Não quer receber". Só o administrador marca "Autorizou".
+- Este recurso **apenas guarda** as autorizações. O envio de campanhas (feriados, pacotes, datas especiais) ainda não existe e depende de a Meta estar ligada.
+
 ## Fornecedores, manutenção e outros contatos
 Nem todo contato é hóspede. Cada contato tem um **tipo**: Hóspede / cliente, Fornecedor, Manutenção, Mercado, Equipe interna ou Outro.
 - **Só hóspedes entram no funil de vendas.** Fornecedores, manutenção e os demais ficam apenas em **Conversas**, sem etapa, sem valor e sem aviso de "cliente parado".

@@ -16,12 +16,14 @@ function parseBRL(text) {
 // Tipos de contato. Só "hospede" entra no funil de vendas.
 const KINDS = [
   ['hospede', 'Hóspede / cliente'],
+  ['lista', 'Lista de marketing'],
   ['fornecedor', 'Fornecedor'],
   ['manutencao', 'Manutenção'],
   ['mercado', 'Mercado'],
   ['equipe', 'Equipe interna'],
   ['outro', 'Outro'],
 ];
+const OPTIN_SHORT = { sim: 'autorizou', nao: 'saiu da lista', desconhecido: 'sem autorização' };
 const kindName = (k) => KINDS.find((x) => x[0] === k)?.[1] ?? k;
 const isGuest = (c) => (c.kind || 'hospede') === 'hospede';
 
@@ -150,7 +152,11 @@ function Crm({ me, onLogout, onUserChange }) {
   const handler = [...messages].reverse().find((m) => m.direction === 'out' && m.author_name)?.author_name;
   const isFinal = (key) => !!config.stages.find((s) => s.key === key)?.is_final;
 
-  const loadContacts = () => api(`/contacts?q=${encodeURIComponent(q)}`).then(setContacts).catch(() => {});
+  const [listSummary, setListSummary] = useState({ lista: 0 });
+  const loadContacts = () => {
+    api(`/contacts?q=${encodeURIComponent(q)}${kindFilter === 'lista' ? '&kind=lista' : ''}`).then(setContacts).catch(() => {});
+    api('/contacts/summary').then(setListSummary).catch(() => {});
+  };
   const loadMessages = (id) => api(`/contacts/${id}/messages`).then(setMessages).catch(() => {});
 
   const loadReplies = () => api('/replies').then(setReplies).catch(() => {});
@@ -159,7 +165,7 @@ function Crm({ me, onLogout, onUserChange }) {
     loadContacts();
     const t = setInterval(loadContacts, 4000);
     return () => clearInterval(t);
-  }, [q]);
+  }, [q, kindFilter]);
   useEffect(() => {
     if (!selectedId) return;
     setMessages([]);
@@ -247,6 +253,7 @@ function Crm({ me, onLogout, onUserChange }) {
         <strong>ZapZap CRM</strong>
         <button className={view === 'conversas' ? 'tab on' : 'tab'} onClick={() => setView('conversas')}>Conversas</button>
         <button className={view === 'funil' ? 'tab on' : 'tab'} onClick={() => setView('funil')}>Funil</button>
+        {isAdmin && <button className={view === 'importar' ? 'tab on' : 'tab'} onClick={() => setView('importar')}>Importar</button>}
         {isAdmin && <button className={view === 'respostas' ? 'tab on' : 'tab'} onClick={() => setView('respostas')}>Respostas</button>}
         <button className={view === 'equipe' ? 'tab on' : 'tab'} onClick={() => setView('equipe')}>Equipe</button>
         <span className={`badge ${config.provider}`}>
@@ -257,7 +264,9 @@ function Crm({ me, onLogout, onUserChange }) {
         {me.auth && <button className="ghost" onClick={onLogout}>Sair</button>}
       </nav>
       {error && view === 'funil' && <div className="error">{error}</div>}
-      {view === 'respostas' && isAdmin ? (
+      {view === 'importar' && isAdmin ? (
+        <Importer onDone={() => { loadContacts(); }} onOpenList={() => { setKindFilter('lista'); setView('conversas'); }} />
+      ) : view === 'respostas' && isAdmin ? (
         <Replies replies={replies} onChanged={loadReplies} />
       ) : view === 'equipe' ? (
         <Team key={me.user.id} me={me} settings={config.settings} onSettings={reloadStages} />
@@ -281,11 +290,12 @@ function Crm({ me, onLogout, onUserChange }) {
         </div>
         <div className="kind-filter" role="group" aria-label="Filtrar por tipo de contato">
           {[['todos', 'Todos'], ...KINDS].map(([k, label]) => {
-            const n = k === 'todos' ? contacts.length : contacts.filter((c) => (c.kind || 'hospede') === k).length;
-            if (k !== 'todos' && k !== 'hospede' && n === 0 && kindFilter !== k) return null;
+            const onList = kindFilter === 'lista';
+            const n = k === 'lista' ? listSummary.lista : onList ? null : k === 'todos' ? contacts.length : contacts.filter((c) => (c.kind || 'hospede') === k).length;
+            if (k !== 'todos' && k !== 'hospede' && !n && kindFilter !== k) return null;
             return (
               <button key={k} type="button" className={kindFilter === k ? 'chip on' : 'chip'} onClick={() => setKindFilter(k)}>
-                {label} <span>{n}</span>
+                {label} {n !== null && <span>{n}</span>}
               </button>
             );
           })}
@@ -300,7 +310,10 @@ function Crm({ me, onLogout, onUserChange }) {
                   {c.value_cents > 0 && ` · ${brl(c.value_cents)}`}
                 </span>
               ) : (
-                <span className="kind-tag">{kindName(c.kind)}</span>
+                <span className="kind-tag">
+                  {kindName(c.kind)}
+                  {c.kind === 'lista' && ` · ${OPTIN_SHORT[c.marketing_optin] || ''}`}
+                </span>
               )}
               {lateDays(c, config.stages) !== null && (
                 <span className="late-tag">⚠ Parado {daysLabel(c.days_in_stage)}</span>
@@ -430,6 +443,17 @@ function Crm({ me, onLogout, onUserChange }) {
           />
             </>
           )}
+          <label htmlFor="optin">Promoções (marketing)</label>
+          <select id="optin" value={selected.marketing_optin || 'desconhecido'} onChange={(e) => update({ marketing_optin: e.target.value })}>
+            <option value="desconhecido">Não informado</option>
+            <option value="sim" disabled={!isAdmin}>Autorizou receber</option>
+            <option value="nao">Não quer receber</option>
+          </select>
+          <p className="hint">
+            {selected.optin_source
+              ? `Registrado em ${new Date(selected.optin_at + 'Z').toLocaleDateString('pt-BR')} · ${selected.optin_source}`
+              : 'Só envie promoções a quem autorizou. Apenas o administrador marca "Autorizou".'}
+          </p>
           {isGuest(selected) && isFinal(selected.stage) ? (
             <>
               <label>Próximo contato</label>
@@ -1009,5 +1033,184 @@ function Media({ m }) {
     <a className="media-doc" href={src} download>
       Baixar {m.media_type === 'document' ? 'documento' : 'arquivo'}: <strong>{m.media_name || 'arquivo'}</strong>
     </a>
+  );
+}
+
+// ---- Importar planilha (CSV) ----
+function parseCSV(text) {
+  text = text.replace(/^\uFEFF/, '');
+  const first = text.split(/\r?\n/, 1)[0] || '';
+  const counts = { ',': 0, ';': 0, '\t': 0 };
+  let inQ = false;
+  for (const ch of first) {
+    if (ch === '"') inQ = !inQ;
+    else if (!inQ && ch in counts) counts[ch] += 1;
+  }
+  const delim = Object.entries(counts).sort((x, y) => y[1] - x[1])[0][0];
+  const rows = [];
+  let row = [], cell = '', q = false;
+  const endRow = () => { row.push(cell); cell = ''; if (row.some((c) => c.trim() !== '')) rows.push(row); row = []; };
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) {
+      if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += ch;
+    } else if (ch === '"') q = true;
+    else if (ch === delim) { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; endRow(); }
+    else cell += ch;
+  }
+  if (cell !== '' || row.length) endRow();
+  return rows;
+}
+
+// Planilhas do Excel em português costumam vir em Windows-1252; tenta UTF-8 e cai para ele se der erro.
+function decodeText(buffer) {
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buffer); } catch { return new TextDecoder('windows-1252').decode(buffer); }
+}
+const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+const guessCol = (headers, re) => headers.findIndex((h) => re.test(norm(h)));
+const optinOf = (v) => {
+  const t = norm(v);
+  if (/^(s|sim|y|yes|true|1|x|ok|autorizou|aceita|aceitou)$/.test(t)) return 'sim';
+  if (/^(n|nao|no|false|0|recusou|nunca)$/.test(t)) return 'nao';
+  return '';
+};
+
+function Importer({ onDone, onOpenList }) {
+  const [file, setFile] = useState(null); // { name, rows }
+  const [map, setMap] = useState({ phone: -1, name: -1, optin: -1 });
+  const [mode, setMode] = useState('desconhecido');
+  const [confirmed, setConfirmed] = useState(false);
+  const [source, setSource] = useState('');
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const pick = async (e) => {
+    const f = e.target.files?.[0];
+    setResult(null);
+    setError('');
+    if (!f) return;
+    try {
+      const rows = parseCSV(decodeText(await f.arrayBuffer()));
+      if (rows.length < 2) throw new Error('A planilha precisa ter uma linha de títulos e pelo menos um contato.');
+      const h = rows[0];
+      setFile({ name: f.name, rows });
+      setMap({ phone: guessCol(h, /(telefone|celular|whats|fone|numero|tel\b)/), name: guessCol(h, /(nome|name|hospede|cliente)/), optin: guessCol(h, /(autoriz|aceit|consent|optin|promo)/) });
+      setSource(`planilha ${f.name}`);
+      setConfirmed(false);
+    } catch (err) {
+      setFile(null);
+      setError(err.message);
+    }
+  };
+
+  const rows = file ? file.rows.slice(1) : [];
+  const usesSim = mode === 'sim' || map.optin >= 0;
+  const ready = file && map.phone >= 0 && (!usesSim || confirmed) && !busy;
+
+  const send = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const body = rows.map((r) => ({
+        phone: r[map.phone] ?? '',
+        name: map.name >= 0 ? r[map.name] ?? '' : '',
+        optin: map.optin >= 0 ? optinOf(r[map.optin]) : '',
+      }));
+      setResult(await api('/contacts/import', { method: 'POST', body: { rows: body, default_optin: mode, source } }));
+      onDone();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const colSelect = (key, label) => (
+    <div>
+      <label htmlFor={`col-${key}`}>{label}</label>
+      <select id={`col-${key}`} value={map[key]} onChange={(e) => setMap({ ...map, [key]: Number(e.target.value) })}>
+        <option value={-1}>{key === 'phone' ? 'Escolha a coluna' : 'Nenhuma'}</option>
+        {file.rows[0].map((h, i) => <option key={i} value={i}>{h || `Coluna ${i + 1}`}</option>)}
+      </select>
+    </div>
+  );
+
+  return (
+    <div className="team">
+      {error && <div className="error">{error}</div>}
+      <section className="panel">
+        <h2>Importar planilha de contatos</h2>
+        <p className="hint">
+          No Excel ou no Google Planilhas, salve como <strong>CSV</strong> (Arquivo, Fazer download ou Salvar como). A primeira linha deve ter os títulos das colunas.
+          Os contatos entram como <strong>Lista de marketing</strong>, fora do funil. Quando alguém responder, vira hóspede na primeira etapa.
+          Deixe a coluna do telefone como <strong>texto</strong> para o Excel não transformar o número em 5,5E+12.
+        </p>
+        <label htmlFor="arquivo">Arquivo CSV</label>
+        <input id="arquivo" type="file" accept=".csv,text/csv,text/plain" onChange={pick} />
+      </section>
+
+      {file && (
+        <>
+          <section className="panel">
+            <h2>Colunas da planilha</h2>
+            <div className="row">
+              {colSelect('phone', 'Telefone / WhatsApp')}
+              {colSelect('name', 'Nome')}
+              {colSelect('optin', 'Autorizou promoções? (opcional)')}
+            </div>
+            <div className="table-scroll">
+              <table className="preview">
+                <thead><tr>{file.rows[0].map((h, i) => <th key={i}>{h}</th>)}</tr></thead>
+                <tbody>{rows.slice(0, 5).map((r, i) => <tr key={i}>{file.rows[0].map((_, j) => <td key={j}>{r[j]}</td>)}</tr>)}</tbody>
+              </table>
+            </div>
+            <p className="hint">{rows.length} linha{rows.length === 1 ? '' : 's'} de contatos. Mostrando as 5 primeiras.</p>
+          </section>
+
+          <section className="panel">
+            <h2>Autorização para promoções</h2>
+            {map.optin >= 0 ? (
+              <p className="hint">Será usada a coluna escolhida: “sim”, “s”, “1” contam como autorizou; “não”, “n”, “0” como não quer receber. Linhas vazias ficam como não informado.</p>
+            ) : (
+              <>
+                <p className="hint">A planilha não tem uma coluna de autorização. O que vale para todos os contatos?</p>
+                <label className="final-check"><input type="radio" name="modo" checked={mode === 'desconhecido'} onChange={() => setMode('desconhecido')} /> Não sei se autorizaram (ficam guardados, mas sem permissão para promoções)</label>
+                <label className="final-check"><input type="radio" name="modo" checked={mode === 'sim'} onChange={() => setMode('sim')} /> Todos autorizaram receber promoções do hotel</label>
+                <label className="final-check"><input type="radio" name="modo" checked={mode === 'nao'} onChange={() => setMode('nao')} /> Ninguém autorizou (guardar apenas como contatos)</label>
+              </>
+            )}
+            <label htmlFor="origem" className="gap-top">De onde veio a autorização? (fica registrado)</label>
+            <input id="origem" value={source} onChange={(e) => setSource(e.target.value)} placeholder="Ex.: formulário do site, ficha de check-in 2025" />
+            {usesSim && (
+              <label className="final-check gap-top">
+                <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
+                Confirmo que as pessoas marcadas como autorizadas concordaram em receber mensagens promocionais do hotel.
+              </label>
+            )}
+            <div className="gap-top">
+              <button disabled={!ready} onClick={send}>{busy ? 'Importando...' : `Importar ${rows.length} contato${rows.length === 1 ? '' : 's'}`}</button>
+            </div>
+          </section>
+        </>
+      )}
+
+      {result && (
+        <section className="panel" role="status">
+          <h2>Importação concluída</h2>
+          <ul className="plain">
+            <li><strong>{result.criados}</strong> contatos novos</li>
+            <li><strong>{result.ja_existiam}</strong> já existiam{result.autorizacao_atualizada > 0 && ` (autorização atualizada em ${result.autorizacao_atualizada})`}</li>
+            <li><strong>{result.duplicados}</strong> repetidos na planilha, ignorados</li>
+            <li><strong>{result.invalidos}</strong> telefones inválidos, ignorados</li>
+          </ul>
+          {result.exemplos_invalidos.length > 0 && (
+            <p className="hint">Exemplos de telefones inválidos: {result.exemplos_invalidos.map((x) => `linha ${x.linha} (“${x.valor || 'vazio'}”)`).join(', ')}.</p>
+          )}
+          <button className="ghost" onClick={onOpenList}>Ver a lista de marketing</button>
+        </section>
+      )}
+    </div>
   );
 }
